@@ -18,6 +18,15 @@ type scheduleForm struct {
 	Days                                         []string
 }
 
+func (f scheduleForm) UsesTimezone() bool {
+	switch f.Mode {
+	case "manual", "minutes", "hourly":
+		return false
+	default:
+		return true
+	}
+}
+
 type choice struct {
 	Value, Label string
 	Selected     bool

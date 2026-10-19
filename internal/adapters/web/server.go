@@ -61,8 +61,9 @@ type Server struct {
 }
 type jobView struct {
 	domain.Job
-	Next     string
-	Schedule string
+	Next         string
+	Schedule     string
+	UsesTimezone bool
 }
 type view struct {
 	Page, Title, Error, CSRF, Username string
@@ -375,7 +376,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request, csrf, user st
 		}
 		// Never pass stored headers into rendered views.
 		j.Authorization = ""
-		v.Jobs = append(v.Jobs, jobView{j, next, scheduleDescription(j.Cron)})
+		v.Jobs = append(v.Jobs, jobView{j, next, scheduleDescription(j.Cron), readSchedule(j.Cron).UsesTimezone()})
 	}
 	render(w, 200, v)
 }
