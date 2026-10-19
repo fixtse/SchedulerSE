@@ -190,8 +190,8 @@ func TestManagementPersistenceSecretsAndConcurrentChanges(t *testing.T) {
 		t.Fatalf("job %#v %v", job, err)
 	}
 	_, body = f.get(t, "/")
-	if !strings.Contains(body, "Scheduler is active") || strings.Contains(body, "SCHEDULER_ENABLED") || strings.Contains(body, "Scheduler is paused") {
-		t.Fatal("dashboard must always show an active scheduler without a global switch")
+	if !strings.Contains(body, "OVERVIEW / 2 AUTOMATIONS") || strings.Contains(body, "Scheduler is active") || strings.Contains(body, "OVERVIEW / Europe/Madrid") {
+		t.Fatal("dashboard must show the automation count without the scheduler banner")
 	}
 	if strings.Contains(body, "<script>") || strings.Contains(body, "new-secret") {
 		t.Fatal("unsafe dashboard rendering")
@@ -323,7 +323,7 @@ func TestScheduleManagementAndManualExecution(t *testing.T) {
 	defer mock.Close()
 	defer func() { unblock(); cancel(); f.app.Wait() }()
 	transport := adapters.NewHTTP(adapters.Config{Timeout: 5 * time.Second})
-	f.app.Runner = &application.Runner{Store: f.store, Sync: transport, Notifications: transport, Log: silentLog{}, Timeout: 5 * time.Second}
+	f.app.Runner = &application.Runner{Store: f.store, Sync: transport, Notifications: &adapters.Telegram{Store: f.store, HTTP: transport}, Log: silentLog{}, Timeout: 5 * time.Second}
 	f.app.Context = ctx
 	form := url.Values{"csrf": {token}, "id": {"friendly"}, "name": {"Friendly"}, "url": {mock.URL}, "body": {`{"count":1,"fullSync":false}`}, "schedule_mode": {"weekly"}, "schedule_time": {"09:30"}, "schedule_days": {"1", "5"}, "timezone": {"America/Lima"}}
 	code, body, _ := f.post(t, "/jobs/new", form)

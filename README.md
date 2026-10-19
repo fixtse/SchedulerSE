@@ -89,7 +89,15 @@ Start a conversation with the bot or give it permission to send messages in your
 or channel. Tokens are never displayed after saving; leave the token field blank to
 keep the saved value. You can replace or remove it, and disable notifications in the UI.
 
-Click **Test Telegram** to send one message with the saved credentials. Save edits
+Choose **Failures and timeouts**, **Successful completions**, and/or **Fallback warnings**
+in **Notification types**. Choices apply immediately to both scheduled and manual runs.
+Fallback warnings are separate from successful completions, so a fallback produces at
+most one message. Existing settings retain failure and fallback alerts; success messages
+start disabled. You can leave all types unchecked to silence task events while keeping
+the connection enabled. Interrupted runs during shutdown remain silent.
+
+Click **Test Telegram** to send one message with the saved credentials, regardless of
+the selected notification types. Save edits
 before testing, check the selected chat, and wait 10 seconds between tests. Tests are
 recorded before sending to prevent duplicate submissions and concurrent sends. Errors
 never expose the token or Telegram response, and uncertain sends are never retried

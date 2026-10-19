@@ -40,7 +40,7 @@ func TestTelegramSettingsSecretsAndTestDelivery(t *testing.T) {
 	}))
 	defer mock.Close()
 	f.app.Telegram = &adapters.Telegram{Store: f.store, HTTP: adapters.NewHTTP(adapters.Config{Timeout: time.Second, TelegramURL: mock.URL})}
-	form := url.Values{"csrf": {csrfToken}, "revision": {"1"}, "bot_token": {"123456:test-secret"}, "chat_id": {"-10012345"}, "enabled": {"on"}}
+	form := url.Values{"csrf": {csrfToken}, "revision": {"1"}, "bot_token": {"123456:test-secret"}, "chat_id": {"-10012345"}, "enabled": {"on"}, "notification_types_present": {"1"}}
 	form.Set("csrf", "forged")
 	code, _, _ := f.post(t, "/settings/telegram", form)
 	if code != 403 {
@@ -57,11 +57,11 @@ func TestTelegramSettingsSecretsAndTestDelivery(t *testing.T) {
 		t.Fatalf("saving settings sent a message or failed: %d %s", code, body)
 	}
 	settings, _ := f.store.Telegram()
-	if settings.Token != "123456:test-secret" || settings.Chat != "-10012345" || !settings.Enabled || settings.Revision != 2 {
+	if settings.Token != "123456:test-secret" || settings.Chat != "-10012345" || !settings.Enabled || settings.Revision != 2 || settings.NotifySuccess || settings.NotifyFailure || settings.NotifyFallback {
 		t.Fatal("Telegram settings not persisted")
 	}
 	code, body = f.get(t, "/settings/telegram")
-	if code != 200 || strings.Contains(body, "test-secret") || !strings.Contains(body, "Saved token") || !strings.Contains(body, "Test Telegram") {
+	if code != 200 || strings.Contains(body, "test-secret") || !strings.Contains(body, "Saved token") || !strings.Contains(body, "Test Telegram") || !strings.Contains(body, `name="notify_success"`) || !strings.Contains(body, `name="notify_failure"`) || !strings.Contains(body, `name="notify_fallback"`) {
 		t.Fatal("saved token exposed or settings controls missing")
 	}
 	match := regexp.MustCompile(`name="test_token" value="([^"]+)"`).FindStringSubmatch(body)
@@ -131,9 +131,11 @@ func TestTelegramSettingsSecretsAndTestDelivery(t *testing.T) {
 	}
 	form.Set("revision", "3")
 	form.Set("clear_token", "on")
+	form.Set("notify_success", "on")
+	form.Set("notify_fallback", "on")
 	code, _, _ = f.post(t, "/settings/telegram", form)
 	settings, _ = f.store.Telegram()
-	if code != 303 || settings.Token != "" {
+	if code != 303 || settings.Token != "" || !settings.NotifySuccess || settings.NotifyFailure || !settings.NotifyFallback {
 		t.Fatal("saved Telegram token could not be removed")
 	}
 	code, _ = f.get(t, "/settings/telegram/test")

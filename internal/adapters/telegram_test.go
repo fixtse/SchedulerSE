@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"github.com/fixtse/SchedulerSE/internal/domain"
@@ -20,7 +21,7 @@ func TestTelegramPersistenceImportAndRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	initial, err := s.Telegram()
-	if err != nil || initial.Enabled || initial.Token != "" || initial.Revision != 1 {
+	if err != nil || initial.Enabled || initial.Token != "" || initial.Revision != 1 || initial.NotifySuccess || !initial.NotifyFailure || !initial.NotifyFallback {
 		t.Fatal("fresh Telegram settings are not empty")
 	}
 	if err = s.ImportTelegram("123456:original", "-10012345"); err != nil {
@@ -32,6 +33,7 @@ func TestTelegramPersistenceImportAndRevisions(t *testing.T) {
 	}
 	stale := settings
 	settings.Token, settings.Chat, settings.Enabled = "", "", false
+	settings.NotifySuccess, settings.NotifyFailure, settings.NotifyFallback = true, false, false
 	if err = s.SaveTelegram(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +50,7 @@ func TestTelegramPersistenceImportAndRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings, _ = s.Telegram()
-	if settings.Enabled || settings.Token != "" || settings.Chat != "" || settings.Revision != 2 {
+	if settings.Enabled || settings.Token != "" || settings.Chat != "" || settings.Revision != 2 || !settings.NotifySuccess || settings.NotifyFailure || settings.NotifyFallback {
 		t.Fatal("old environment replaced UI settings after restart")
 	}
 }
@@ -160,6 +162,83 @@ func TestTelegramValidation(t *testing.T) {
 	} {
 		if ValidateTelegram(settings) == nil {
 			t.Fatal("invalid Telegram settings accepted")
+		}
+	}
+}
+
+func TestTelegramNotificationTypeSelection(t *testing.T) {
+	t.Parallel()
+	s := testStore(t)
+	var calls atomic.Int32
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Method != http.MethodPost || r.URL.Path != "/bot123456:token/sendMessage" {
+			t.Error("unexpected notification request")
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer mock.Close()
+	telegram := &Telegram{Store: s, HTTP: NewHTTP(Config{Timeout: time.Second, TelegramURL: mock.URL})}
+	for _, tc := range []struct {
+		name                                string
+		enabled, success, failure, fallback bool
+		kind                                domain.NotificationType
+		want                                bool
+	}{
+		{"default success silent", true, false, true, true, domain.NotificationSuccess, false},
+		{"default failure sent", true, false, true, true, domain.NotificationFailure, true},
+		{"default fallback sent", true, false, true, true, domain.NotificationFallback, true},
+		{"success selected", true, true, false, false, domain.NotificationSuccess, true},
+		{"failure deselected", true, true, false, false, domain.NotificationFailure, false},
+		{"fallback deselected", true, true, false, false, domain.NotificationFallback, false},
+		{"all deselected", true, false, false, false, domain.NotificationSuccess, false},
+		{"connection disabled", false, true, true, true, domain.NotificationFailure, false},
+		{"unknown type silent", true, true, true, true, domain.NotificationType("unknown"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			settings, err := s.Telegram()
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings.Token, settings.Chat, settings.Enabled = "123456:token", "12345", tc.enabled
+			settings.NotifySuccess, settings.NotifyFailure, settings.NotifyFallback = tc.success, tc.failure, tc.fallback
+			if err = s.SaveTelegram(settings); err != nil {
+				t.Fatal(err)
+			}
+			before := calls.Load()
+			err = telegram.Notify(context.Background(), tc.kind, tc.name)
+			if tc.want {
+				if err != nil || calls.Load() != before+1 {
+					t.Fatalf("selected event not sent exactly once: %v", err)
+				}
+			} else if !errors.Is(err, domain.ErrNotificationsDisabled) || calls.Load() != before {
+				t.Fatalf("unselected event sent: %v", err)
+			}
+		})
+	}
+}
+
+func TestTelegramNotificationMigration(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite3", dir+"/runs.sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE telegram_settings(id INTEGER PRIMARY KEY CHECK(id=1),token TEXT NOT NULL,chat TEXT NOT NULL,enabled INTEGER NOT NULL,revision INTEGER NOT NULL); INSERT INTO telegram_settings VALUES(1,'123456:saved','12345',1,7)`)
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		s, err := OpenStore(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		settings, err := s.Telegram()
+		s.DB.Close()
+		if err != nil || settings.Token != "123456:saved" || settings.Chat != "12345" || !settings.Enabled || settings.Revision != 7 || settings.NotifySuccess || !settings.NotifyFailure || !settings.NotifyFallback {
+			t.Fatal("upgrade changed credentials, revision, or existing alert behavior")
 		}
 	}
 }

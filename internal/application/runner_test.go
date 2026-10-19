@@ -18,9 +18,15 @@ func (f syncFunc) Post(ctx context.Context, j domain.Job) (string, error) { retu
 type alerts struct {
 	messages []string
 	fail     bool
+	success  bool
+	kinds    []domain.NotificationType
 }
 
-func (a *alerts) Send(_ context.Context, text string) error {
+func (a *alerts) Notify(_ context.Context, kind domain.NotificationType, text string) error {
+	a.kinds = append(a.kinds, kind)
+	if kind == domain.NotificationSuccess && !a.success {
+		return domain.ErrNotificationsDisabled
+	}
 	a.messages = append(a.messages, text)
 	if a.fail {
 		return errors.New("private-token")
@@ -189,6 +195,52 @@ func TestRunnerUsesPerJobTimeout(t *testing.T) {
 			out, err := runner.Run(context.Background(), j, "manual:timeout")
 			if err != nil || out == nil || out.Status != "success" || calls != 1 {
 				t.Fatalf("timeout run: %v %v, calls=%d", out, err, calls)
+			}
+		})
+	}
+}
+
+func TestRunnerCompletionNotificationTypesAndDedup(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, policy, auth string
+		failure            bool
+		kind               domain.NotificationType
+	}{
+		{"success", "generic", "", false, domain.NotificationSuccess},
+		{"failure", "generic", "", true, domain.NotificationFailure},
+		{"fallback", "youtube-full", "api-key", false, domain.NotificationFallback},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			store, err := adapters.OpenStore(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.DB.Close()
+			j := domain.Job{ID: tc.name, Name: "Task", Enabled: true, Policy: tc.policy}
+			if err = store.Save(j, true); err != nil {
+				t.Fatal(err)
+			}
+			j, _ = store.Job(j.ID)
+			a := &alerts{success: true}
+			calls := 0
+			runner := application.Runner{Store: store, Notifications: a, Log: &logs{}, Timeout: time.Second, Sync: syncFunc(func(context.Context, domain.Job) (string, error) {
+				calls++
+				if tc.failure {
+					return "", &domain.Failure{Code: "HTTP_ERROR", Status: 503}
+				}
+				return tc.auth, nil
+			})}
+			out, err := runner.Run(context.Background(), j, "manual:one")
+			if err != nil || out == nil || out.Status != string(tc.kind) || out.Notification != "sent" || len(a.kinds) != 1 || a.kinds[0] != tc.kind || len(a.messages) != 1 {
+				t.Fatalf("wrong completion notification: %v %v", out, err)
+			}
+			if tc.kind == domain.NotificationSuccess && !strings.Contains(a.messages[0], "Task completed successfully: Task") {
+				t.Fatal("success message missing task identity")
+			}
+			if again, _ := runner.Run(context.Background(), j, "manual:one"); again != nil || calls != 1 || len(a.messages) != 1 {
+				t.Fatal("repeated run sent a duplicate notification")
 			}
 		})
 	}

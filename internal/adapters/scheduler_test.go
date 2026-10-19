@@ -67,7 +67,9 @@ func (quietLog) Event(string, map[string]any) {}
 
 type quietNotifications struct{}
 
-func (quietNotifications) Send(context.Context, string) error { return nil }
+func (quietNotifications) Notify(context.Context, domain.NotificationType, string) error {
+	return domain.ErrNotificationsDisabled
+}
 func TestSchedulerReloadAndShutdown(t *testing.T) {
 	s := testStore(t)
 	j := domain.Job{ID: "test", Name: "Test", URL: "http://127.0.0.1/mock", Body: []byte(`{}`), Cron: "* * * * * *", Enabled: false, Policy: "generic"}

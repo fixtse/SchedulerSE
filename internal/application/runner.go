@@ -11,7 +11,7 @@ type Sync interface {
 	Post(context.Context, domain.Job) (string, error)
 }
 type Notifications interface {
-	Send(context.Context, string) error
+	Notify(context.Context, domain.NotificationType, string) error
 }
 type Runs interface {
 	Begin(domain.Job, string) (bool, error)
@@ -63,11 +63,13 @@ func (r *Runner) execute(ctx context.Context, j domain.Job, slot string) (*domai
 	authMethod, requestErr := r.Sync.Post(requestCtx, j)
 	cancel()
 	alert := ""
+	kind := domain.NotificationSuccess
 	if requestErr != nil {
 		if ctx.Err() != nil {
 			outcome.Status = "interrupted"
 		} else {
 			outcome.Status = "failed"
+			kind = domain.NotificationFailure
 			var f *domain.Failure
 			if !errors.As(requestErr, &f) {
 				f = &domain.Failure{Code: "request_failed"}
@@ -77,11 +79,14 @@ func (r *Runner) execute(ctx context.Context, j domain.Job, slot string) (*domai
 		}
 	} else if domain.IsYouTube(j) && authMethod == "api-key" {
 		outcome.Status = "fallback"
+		kind = domain.NotificationFallback
 		alert = domain.FallbackAlert(j)
+	} else {
+		alert = "Task completed successfully: " + j.Name + "\nTask ID: " + j.ID
 	}
 	if alert != "" {
 		alertCtx, stop := context.WithTimeout(ctx, 15*time.Second)
-		err := r.Notifications.Send(alertCtx, alert)
+		err := r.Notifications.Notify(alertCtx, kind, alert)
 		stop()
 		if errors.Is(err, domain.ErrNotificationsDisabled) {
 			outcome.Notification = "none"

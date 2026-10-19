@@ -15,16 +15,15 @@
 {{else}}
 <main class="workspace">
 {{if eq .Page "dashboard"}}
-<div class="page-heading"><div><p class="eyebrow">OVERVIEW / {{.Timezone}}</p><h1>Your automations<span class="accent">.</span></h1><p class="muted">A few small jobs. One less thing to think about.</p></div><a class="primary" href="/jobs/new">+ Add automation</a></div>
+<div class="page-heading"><div><p class="eyebrow">OVERVIEW / {{len .Jobs}} {{if eq (len .Jobs) 1}}AUTOMATION{{else}}AUTOMATIONS{{end}}</p><h1>Your automations<span class="accent">.</span></h1><p class="muted">A few small jobs. One less thing to think about.</p></div><a class="primary" href="/jobs/new">+ Add automation</a></div>
 {{if .Notice}}<div class="notice" role="status">{{.Notice}} <a href="/">Refresh activity →</a></div>{{end}}
-<div class="status-banner"><span class="dot"></span><div><strong>Scheduler is active</strong><span>Enabled jobs run at their next scheduled time.</span></div><span class="tag">{{len .Jobs}} automations</span></div>
 <div class="section-label"><h2>Automations</h2><span>POST requests · No automatic retries</span></div>
 <div class="jobs">{{range .Jobs}}<article class="job-card"><div class="card-top"><span class="job-icon">↗</span><span class="badge {{if .Enabled}}enabled{{end}}">{{if .Enabled}}Enabled{{else}}Disabled{{end}}</span></div><h3><a href="/jobs/{{.ID}}">{{.Name}}</a></h3><p class="endpoint">{{.URL}}</p><div class="job-meta"><span>Schedule</span><strong>{{.Schedule}}</strong>{{if .UsesTimezone}}<span>Timezone</span><strong>{{.Timezone}}</strong>{{end}}<span>Next run</span><strong>{{.Next}}</strong></div><div class="card-footer"><a href="/jobs/{{.ID}}">Edit automation →</a><form method="post" action="/jobs/{{.ID}}/run"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><input type="hidden" name="run_token" value="{{$.RunToken}}"><button class="run-button">Run now</button></form><form method="post" action="/jobs/{{.ID}}/toggle"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><button class="text-button">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></form></div></article>{{end}}</div>
 <div class="section-label history-heading"><h2>Recent activity</h2><span>Latest 30 executions · UTC history</span></div>
 {{if .Runs}}<div class="table-wrap"><table><thead><tr><th>Automation</th><th>Started (UTC)</th><th>Result</th><th>Notification</th></tr></thead><tbody>{{range .Runs}}<tr><td>{{.Job}}</td><td>{{.Started}}</td><td><span class="badge">{{.Status}}</span></td><td>{{.Notification}}</td></tr>{{end}}</tbody></table></div>{{else}}<div class="empty"><span>◷</span><h3>Nothing has run yet</h3><p>Execution results will appear here. Saving an automation never runs it.</p></div>{{end}}
 {{else if eq .Page "telegram"}}
 <a class="back" href="/">← All automations</a>
-<div class="page-heading"><div><p class="eyebrow">SETTINGS / NOTIFICATIONS</p><h1>Telegram notifications<span class="accent">.</span></h1><p class="muted">Connect a bot to receive task error alerts.</p></div></div>
+<div class="page-heading"><div><p class="eyebrow">SETTINGS / NOTIFICATIONS</p><h1>Telegram notifications<span class="accent">.</span></h1><p class="muted">Choose which task events reach your Telegram chat.</p></div></div>
 {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
 {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
 <div class="editor"><form method="post" action="/settings/telegram" class="panel stack">
@@ -34,9 +33,16 @@
 {{if .HasBotToken}}<label class="check"><input name="clear_token" type="checkbox">Remove the saved bot token</label>{{end}}
 <label>Chat ID<input name="chat_id" value="{{.Telegram.Chat}}" maxlength="64" placeholder="-1001234567890"><small>Use a numeric chat ID or public channel @username. Start a conversation with the bot first, or add it to the group or channel with permission to send messages.</small></label>
 <label class="check"><input name="enabled" type="checkbox" {{if .Telegram.Enabled}}checked{{end}}>Enable Telegram notifications</label>
+<fieldset class="stack"><legend>Notification types</legend>
+<input type="hidden" name="notification_types_present" value="1">
+<label class="check"><input name="notify_failure" type="checkbox" {{if .Telegram.NotifyFailure}}checked{{end}}>Failures and timeouts</label>
+<label class="check"><input name="notify_success" type="checkbox" {{if .Telegram.NotifySuccess}}checked{{end}}>Successful completions</label>
+<label class="check"><input name="notify_fallback" type="checkbox" {{if .Telegram.NotifyFallback}}checked{{end}}>Fallback warnings</label>
+<small>Applies to scheduled and manual runs. Fallback warnings cover tasks that complete using a fallback authentication method. Leave all types unchecked to silence task events while keeping the connection available for testing.</small>
+</fieldset>
 <p class="muted">Settings are saved in the persistent state volume and apply immediately. Some saved tasks require notifications and wait while Telegram is disabled.</p>
 <button class="primary">Save Telegram settings <span>→</span></button>
-</form><aside class="panel stack"><h2>Test the connection</h2><p class="muted">Save your changes first. Test sends one message using the saved bot token and chat ID. Allow 10 seconds between tests.</p>
+</form><aside class="panel stack"><h2>Test the connection</h2><p class="muted">Save your changes first. Test sends one message using the saved bot token and chat ID, regardless of the selected notification types. Allow 10 seconds between tests.</p>
 <form method="post" action="/settings/telegram/test"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Telegram.Revision}}"><input type="hidden" name="test_token" value="{{.TestToken}}"><button class="run-button" {{if not .Telegram.Enabled}}disabled{{end}}>Test Telegram</button></form>
 <p class="note">Tests send real messages when you click the button. Messages are attempted once, without automatic retries.</p></aside></div>
 {{else if eq .Page "job"}}
@@ -78,7 +84,7 @@
 <label data-schedule-modes="custom">Cron expression<input name="cron" value="{{.Schedule.Cron}}" placeholder="*/15 * * * *"><small>Five fields, or six with seconds. Existing custom expressions are preserved.</small></label>
 {{end}}
 <label data-schedule-modes="daily weekly monthly custom" {{if not .Schedule.UsesTimezone}}hidden{{end}}>Timezone<select name="timezone">{{range .Timezones}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select><small>Times follow this timezone, including daylight-saving changes. Skipped local times do not run; repeated times may run twice.</small></label>
-<label class="check"><input type="checkbox" name="enabled" {{if .Job.Enabled}}checked{{end}}>Enable scheduled runs</label><p class="muted">Run now works even when scheduled runs are disabled. New automations start disabled.</p><div class="note">Successful requests stay silent. Errors send a Telegram alert when Telegram is configured. Requests and alerts are never retried automatically.</div><button class="primary">Save automation <span>→</span></button><a class="cancel" href="/">Cancel</a></aside></form>
+<label class="check"><input type="checkbox" name="enabled" {{if .Job.Enabled}}checked{{end}}>Enable scheduled runs</label><p class="muted">Run now works even when scheduled runs are disabled. New automations start disabled.</p><div class="note">Telegram messages follow the notification types selected in settings. Requests and alerts are never retried automatically.</div><button class="primary">Save automation <span>→</span></button><a class="cancel" href="/">Cancel</a></aside></form>
 {{if not .New}}<section class="manual-run panel"><h2>Run this task now</h2><p class="muted">Runs the saved configuration once, even when scheduled runs for this task are disabled. Save any changes first. Results appear in recent activity.</p><form method="post" action="/jobs/{{.Job.ID}}/run"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Job.Revision}}"><input type="hidden" name="run_token" value="{{.RunToken}}"><button class="run-button">Run now</button></form></section>{{end}}
 {{end}}
 <footer>SchedulerSE <span>Less overhead. More peace of mind.</span></footer></main>{{end}}

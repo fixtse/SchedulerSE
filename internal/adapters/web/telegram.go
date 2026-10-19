@@ -52,6 +52,11 @@ func (s *Server) saveTelegram(w http.ResponseWriter, r *http.Request, csrf, user
 	}
 	settings.Chat = strings.TrimSpace(r.PostFormValue("chat_id"))
 	settings.Enabled = r.PostFormValue("enabled") == "on"
+	if r.PostFormValue("notification_types_present") == "1" {
+		settings.NotifySuccess = r.PostFormValue("notify_success") == "on"
+		settings.NotifyFailure = r.PostFormValue("notify_failure") == "on"
+		settings.NotifyFallback = r.PostFormValue("notify_fallback") == "on"
+	}
 	if err = adapters.ValidateTelegram(settings); err != nil {
 		settings.Token = storedToken
 		s.renderTelegram(w, 400, csrf, user, settings, err.Error(), "")

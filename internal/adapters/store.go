@@ -71,6 +71,10 @@ func OpenStore(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err = migrateTelegramNotifications(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return s, nil
 }
 func (s *Store) Seed(jobs []domain.Job) error {
