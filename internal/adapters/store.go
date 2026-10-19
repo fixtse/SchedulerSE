@@ -1,0 +1,231 @@
+package adapters
+
+import (
+	"database/sql"
+	"errors"
+	"github.com/fixtse/SchedulerSE/internal/domain"
+	_ "github.com/mattn/go-sqlite3"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+type Store struct{ DB *sql.DB }
+
+func OpenStore(dir string) (*Store, error) {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "runs.sqlite")+"?_journal_mode=WAL&_synchronous=FULL&_busy_timeout=5000&_foreign_keys=on")
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	s := &Store{DB: db}
+	_, err = db.Exec(`
+ CREATE TABLE IF NOT EXISTS runs(job TEXT NOT NULL,slot TEXT NOT NULL,status TEXT NOT NULL,
+ notification TEXT NOT NULL DEFAULT 'none',started TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,finished TEXT,PRIMARY KEY(job,slot));
+ CREATE UNIQUE INDEX IF NOT EXISTS running_job ON runs(job) WHERE status='running';
+ CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,name TEXT NOT NULL,url TEXT NOT NULL,authorization TEXT NOT NULL,body TEXT NOT NULL,cron TEXT NOT NULL,enabled INTEGER NOT NULL,policy TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1);
+ CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS account(id INTEGER PRIMARY KEY CHECK(id=1),username TEXT NOT NULL,password BLOB NOT NULL);
+ CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,csrf TEXT NOT NULL,expires INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS telegram_settings(id INTEGER PRIMARY KEY CHECK(id=1),token TEXT NOT NULL,chat TEXT NOT NULL,enabled INTEGER NOT NULL,revision INTEGER NOT NULL);
+ INSERT OR IGNORE INTO telegram_settings(id,token,chat,enabled,revision) VALUES(1,'','',0,1);
+ CREATE TABLE IF NOT EXISTS telegram_tests(token TEXT PRIMARY KEY,revision INTEGER NOT NULL,status TEXT NOT NULL,started INTEGER NOT NULL);
+ CREATE UNIQUE INDEX IF NOT EXISTS active_telegram_test ON telegram_tests((1)) WHERE status='running';
+ `)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	// Add per-job settings without changing existing schedules or revisions.
+	rows, err := db.Query("PRAGMA table_info(jobs)")
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	hasTimezone, hasTimeout := false, false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, kind string
+		var defaultValue any
+		if err = rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+			break
+		}
+		hasTimezone = hasTimezone || name == "timezone"
+		hasTimeout = hasTimeout || name == "request_timeout_ms"
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err == nil && !hasTimezone {
+		_, err = db.Exec("ALTER TABLE jobs ADD COLUMN timezone TEXT NOT NULL DEFAULT ''")
+	}
+	if err == nil && !hasTimeout {
+		_, err = db.Exec("ALTER TABLE jobs ADD COLUMN request_timeout_ms INTEGER NOT NULL DEFAULT 0")
+	}
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	return s, nil
+}
+func (s *Store) Seed(jobs []domain.Job) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var exists int
+	if err = tx.QueryRow("SELECT count(*) FROM metadata WHERE key='jobs-seeded'").Scan(&exists); err != nil {
+		return err
+	}
+	if exists != 0 {
+		return nil
+	}
+	for _, j := range jobs {
+		if _, err = tx.Exec(`INSERT INTO jobs(id,name,url,authorization,body,cron,enabled,policy,timezone,request_timeout_ms) VALUES(?,?,?,?,?,?,?,?,?,?)`, j.ID, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Policy, j.Timezone, j.TimeoutMS); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec("INSERT INTO metadata(key,value) VALUES('jobs-seeded','1')"); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+func (s *Store) Recover() error {
+	_, err := s.DB.Exec("UPDATE runs SET status='interrupted',finished=CURRENT_TIMESTAMP WHERE status='running'; UPDATE telegram_tests SET status='interrupted' WHERE status='running'")
+	return err
+}
+func (s *Store) Begin(j domain.Job, slot string) (bool, error) {
+	result, err := s.DB.Exec(`INSERT OR IGNORE INTO runs(job,slot,status) SELECT ?,?,'running' WHERE EXISTS(SELECT 1 FROM jobs WHERE id=? AND revision=? AND (enabled=1 OR ?))`, j.ID, slot, j.ID, j.Revision, strings.HasPrefix(slot, "manual:"))
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+func (s *Store) Finish(id, slot string, o domain.Outcome) error {
+	result, err := s.DB.Exec("UPDATE runs SET status=?,notification=?,finished=CURRENT_TIMESTAMP WHERE job=? AND slot=? AND status='running'", o.Status, o.Notification, id, slot)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return errors.New("run is not active")
+	}
+	return nil
+}
+func (s *Store) Health() error {
+	var n int
+	return s.DB.QueryRow("SELECT count(*) FROM metadata").Scan(&n)
+}
+
+const jobColumns = "id,name,url,authorization,body,cron,enabled,policy,revision,timezone,request_timeout_ms"
+
+func scanJob(row interface{ Scan(...any) error }) (domain.Job, error) {
+	var j domain.Job
+	var body string
+	err := row.Scan(&j.ID, &j.Name, &j.URL, &j.Authorization, &body, &j.Cron, &j.Enabled, &j.Policy, &j.Revision, &j.Timezone, &j.TimeoutMS)
+	j.Body = []byte(body)
+	return j, err
+}
+func (s *Store) Jobs() ([]domain.Job, error) {
+	rows, err := s.DB.Query("SELECT " + jobColumns + " FROM jobs ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	jobs := []domain.Job{}
+	for rows.Next() {
+		j, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, j)
+	}
+	return jobs, rows.Err()
+}
+func (s *Store) Job(id string) (domain.Job, error) {
+	return scanJob(s.DB.QueryRow("SELECT "+jobColumns+" FROM jobs WHERE id=?", id))
+}
+
+var ErrConflict = errors.New("job changed in another session; reload before saving")
+
+func (s *Store) Save(j domain.Job, create bool) error {
+	if create {
+		_, err := s.DB.Exec(`INSERT INTO jobs(id,name,url,authorization,body,cron,enabled,policy,timezone,request_timeout_ms) VALUES(?,?,?,?,?,?,?,?,?,?)`, j.ID, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Policy, j.Timezone, j.TimeoutMS)
+		return err
+	}
+	result, err := s.DB.Exec(`UPDATE jobs SET name=?,url=?,authorization=?,body=?,cron=?,enabled=?,timezone=?,request_timeout_ms=?,revision=revision+1 WHERE id=? AND revision=? AND policy=?`, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Timezone, j.TimeoutMS, j.ID, j.Revision, j.Policy)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return ErrConflict
+	}
+	return nil
+}
+func (s *Store) Recent() ([]domain.Run, error) {
+	rows, err := s.DB.Query("SELECT job,slot,status,notification,started,COALESCE(finished,'') FROM runs ORDER BY started DESC,rowid DESC LIMIT 30")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	list := []domain.Run{}
+	for rows.Next() {
+		var r domain.Run
+		if err := rows.Scan(&r.Job, &r.Slot, &r.Status, &r.Notification, &r.Started, &r.Finished); err != nil {
+			return nil, err
+		}
+		list = append(list, r)
+	}
+	return list, rows.Err()
+}
+func (s *Store) Account() (string, []byte, error) {
+	var user string
+	var hash []byte
+	err := s.DB.QueryRow("SELECT username,password FROM account WHERE id=1").Scan(&user, &hash)
+	return user, hash, err
+}
+func (s *Store) CreateAccount(user string, hash []byte) error {
+	_, err := s.DB.Exec("INSERT INTO account(id,username,password) VALUES(1,?,?)", user, hash)
+	return err
+}
+func (s *Store) AddSession(token, csrf string, expires time.Time) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec("DELETE FROM sessions WHERE expires<=?", time.Now().Unix()); err != nil {
+		return err
+	}
+	// Bound persistent sessions, including repeated successful logins.
+	if _, err = tx.Exec("DELETE FROM sessions WHERE token IN (SELECT token FROM sessions ORDER BY expires DESC LIMIT -1 OFFSET 19)"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("INSERT INTO sessions(token,csrf,expires) VALUES(?,?,?)", token, csrf, expires.Unix()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+func (s *Store) Session(token string) (string, error) {
+	var csrf string
+	err := s.DB.QueryRow("SELECT csrf FROM sessions WHERE token=? AND expires>?", token, time.Now().Unix()).Scan(&csrf)
+	return csrf, err
+}
+func (s *Store) DeleteSession(token string) error {
+	_, err := s.DB.Exec("DELETE FROM sessions WHERE token=?", token)
+	return err
+}

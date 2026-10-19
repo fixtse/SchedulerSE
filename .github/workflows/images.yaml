@@ -1,0 +1,101 @@
+name: Test and publish container
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.2'
+          cache: true
+      - name: Verify Go and Compose with the example environment
+        run: |
+          cp .env.example .env
+          make format-check check test compose-check
+
+  image:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Image coordinates
+        id: coordinates
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        id: metadata
+        with:
+          images: ${{ steps.coordinates.outputs.image }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,format=long
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=pr
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        id: build
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          load: ${{ github.event_name == 'pull_request' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha,scope=runtime-amd64
+          cache-to: type=gha,scope=runtime-amd64,mode=max
+          provenance: mode=min
+      - name: Smoke test the production image with isolated mock services
+        env:
+          IMAGE: ${{ steps.coordinates.outputs.image }}:sha-${{ github.sha }}
+        run: |
+          if [[ "${{ github.event_name }}" != pull_request ]]; then docker pull "$IMAGE"; fi
+          python3 test/container_smoke.py "$IMAGE"
+
+  deploy:
+    name: Deploy production image
+    needs: image
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Deploy the published GHCR image with Dokploy
+        env:
+          DOKPLOY_DEPLOY_HOOK: ${{ secrets.DOKPLOY_SCHEDULERSE_DEPLOY_HOOK }}
+        run: |
+          if [[ -z "$DOKPLOY_DEPLOY_HOOK" ]]; then
+            echo '::notice::Deployment skipped: DOKPLOY_SCHEDULERSE_DEPLOY_HOOK is not configured.'
+            exit 0
+          fi
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 60 \
+            --output /dev/null --user-agent 'GitHub-Hookshot/SchedulerSE-Actions' \
+            --request POST "$DOKPLOY_DEPLOY_HOOK"

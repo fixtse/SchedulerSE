@@ -1,0 +1,33 @@
+name: schedulerse
+services:
+  schedulerse:
+    image: ${SCHEDULERSE_IMAGE:-ghcr.io/fixtse/schedulerse:latest}
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    env_file:
+      - path: ./.env
+        required: true
+    environment:
+      DATA_DIR: /data
+      LISTEN_ADDR: ":8789"
+    ports:
+      - "${MANAGEMENT_BIND:-127.0.0.1}:${MANAGEMENT_PORT:-8789}:8789"
+    volumes:
+      - state:/data
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=16m
+    healthcheck:
+      test: ["CMD", "/app/schedulerse", "healthcheck"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+volumes:
+  state:
+    name: ${SCHEDULERSE_STATE_VOLUME:-schedulerse_state}

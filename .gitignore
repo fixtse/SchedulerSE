@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+data/
+bin/
+/schedulerse
+/updates
+*.log
+coverage/
+
+# Ignore local dependency and build artifacts.
+node_modules/
+dist/

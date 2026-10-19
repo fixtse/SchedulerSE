@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Title}} · SchedulerSE</title><link rel="stylesheet" href="/style.css"><script src="/schedule.js" defer></script></head>
+<body>
+<header class="top"><a class="brand" href="/"><span class="mark">s</span> SchedulerSE<span class="brand-note">/ control room</span></a>{{if .Username}}<div class="account"><a href="/settings/telegram">Telegram settings</a><span>{{.Username}}</span><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="text-button">Sign out ↗</button></form></div>{{end}}</header>
+{{if or (eq .Page "setup") (eq .Page "login")}}
+<main class="auth-layout"><section class="auth-intro"><p class="eyebrow">SMALL SERVICE. EVERYTHING IN ORDER.</p><h1>Your routines.<br>A little more<br><em>under control.</em></h1><p class="intro-copy">One quiet place to manage the jobs that keep things moving.</p><div class="intro-bottom"><span class="dot"></span> Self-hosted &nbsp; / &nbsp; Built to stay light</div></section>
+<section class="auth-card"><p class="eyebrow">{{if eq .Page "setup"}}01 / FIRST-TIME SETUP{{else}}WELCOME BACK{{end}}</p><h2>{{.Title}}</h2><p class="muted">{{if eq .Page "setup"}}Create the administrator account for this installation.{{else}}Sign in to manage your automations.{{end}}</p>
+{{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+<form method="post" action="/{{.Page}}" class="stack"><input type="hidden" name="csrf" value="{{.CSRF}}">
+{{if eq .Page "setup"}}<label>Setup token<input name="setup_token" type="password" required autocomplete="off"><small>Retrieve it from your server:<code>docker compose exec schedulerse /app/schedulerse setup-token</code></small></label>{{end}}
+<label>Username<input name="username" required minlength="3" maxlength="64" autocomplete="username" autofocus></label>
+<label>Password<input name="password" type="password" required {{if eq .Page "setup"}}minlength="12" maxlength="72" autocomplete="new-password"{{else}}autocomplete="current-password"{{end}}>{{if eq .Page "setup"}}<small>Use at least 12 characters. Choose a unique password.</small>{{end}}</label>
+{{if eq .Page "setup"}}<label>Confirm password<input name="confirm_password" type="password" required minlength="12" maxlength="72" autocomplete="new-password"></label>{{end}}
+<button class="primary">{{if eq .Page "setup"}}Create account{{else}}Sign in{{end}} <span>→</span></button></form><p class="fine">{{if eq .Page "setup"}}One administrator. No default credentials.{{else}}Your session expires after 12 hours.{{end}}</p></section></main>
+{{else}}
+<main class="workspace">
+{{if eq .Page "dashboard"}}
+<div class="page-heading"><div><p class="eyebrow">OVERVIEW / {{.Timezone}}</p><h1>Your automations<span class="accent">.</span></h1><p class="muted">A few small jobs. One less thing to think about.</p></div><a class="primary" href="/jobs/new">+ Add automation</a></div>
+{{if .Notice}}<div class="notice" role="status">{{.Notice}} <a href="/">Refresh activity →</a></div>{{end}}
+<div class="status-banner"><span class="dot"></span><div><strong>Scheduler is active</strong><span>Enabled jobs run at their next scheduled time.</span></div><span class="tag">{{len .Jobs}} automations</span></div>
+<div class="section-label"><h2>Automations</h2><span>POST requests · No automatic retries</span></div>
+<div class="jobs">{{range .Jobs}}<article class="job-card"><div class="card-top"><span class="job-icon">↗</span><span class="badge {{if .Enabled}}enabled{{end}}">{{if .Enabled}}Enabled{{else}}Disabled{{end}}</span></div><h3><a href="/jobs/{{.ID}}">{{.Name}}</a></h3><p class="endpoint">{{.URL}}</p><div class="job-meta"><span>Schedule</span><strong>{{.Schedule}}</strong><span>Timezone</span><strong>{{.Timezone}}</strong><span>Next run</span><strong>{{.Next}}</strong></div><div class="card-footer"><a href="/jobs/{{.ID}}">Edit automation →</a><form method="post" action="/jobs/{{.ID}}/run"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><input type="hidden" name="run_token" value="{{$.RunToken}}"><button class="run-button">Run now</button></form><form method="post" action="/jobs/{{.ID}}/toggle"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><button class="text-button">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></form></div></article>{{end}}</div>
+<div class="section-label history-heading"><h2>Recent activity</h2><span>Latest 30 executions · UTC history</span></div>
+{{if .Runs}}<div class="table-wrap"><table><thead><tr><th>Automation</th><th>Started (UTC)</th><th>Result</th><th>Notification</th></tr></thead><tbody>{{range .Runs}}<tr><td>{{.Job}}</td><td>{{.Started}}</td><td><span class="badge">{{.Status}}</span></td><td>{{.Notification}}</td></tr>{{end}}</tbody></table></div>{{else}}<div class="empty"><span>◷</span><h3>Nothing has run yet</h3><p>Execution results will appear here. Saving an automation never runs it.</p></div>{{end}}
+{{else if eq .Page "telegram"}}
+<a class="back" href="/">← All automations</a>
+<div class="page-heading"><div><p class="eyebrow">SETTINGS / NOTIFICATIONS</p><h1>Telegram notifications<span class="accent">.</span></h1><p class="muted">Connect a bot to receive task error alerts.</p></div></div>
+{{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+{{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
+<div class="editor"><form method="post" action="/settings/telegram" class="panel stack">
+<input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Telegram.Revision}}">
+<h2>Connection</h2>
+<label>Bot token<input name="bot_token" type="password" autocomplete="new-password" maxlength="256" placeholder="{{if .HasBotToken}}Saved token · leave blank to keep{{else}}123456789:…{{end}}"><small>Create a bot with @BotFather in Telegram and paste its token here. Saved tokens are never displayed.</small></label>
+{{if .HasBotToken}}<label class="check"><input name="clear_token" type="checkbox">Remove the saved bot token</label>{{end}}
+<label>Chat ID<input name="chat_id" value="{{.Telegram.Chat}}" maxlength="64" placeholder="-1001234567890"><small>Use a numeric chat ID or public channel @username. Start a conversation with the bot first, or add it to the group or channel with permission to send messages.</small></label>
+<label class="check"><input name="enabled" type="checkbox" {{if .Telegram.Enabled}}checked{{end}}>Enable Telegram notifications</label>
+<p class="muted">Settings are saved in the persistent state volume and apply immediately. Some saved tasks require notifications and wait while Telegram is disabled.</p>
+<button class="primary">Save Telegram settings <span>→</span></button>
+</form><aside class="panel stack"><h2>Test the connection</h2><p class="muted">Save your changes first. Test sends one message using the saved bot token and chat ID. Allow 10 seconds between tests.</p>
+<form method="post" action="/settings/telegram/test"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Telegram.Revision}}"><input type="hidden" name="test_token" value="{{.TestToken}}"><button class="run-button" {{if not .Telegram.Enabled}}disabled{{end}}>Test Telegram</button></form>
+<p class="note">Tests send real messages when you click the button. Messages are attempted once, without automatic retries.</p></aside></div>
+{{else if eq .Page "job"}}
+<a class="back" href="/">← All automations</a><div class="page-heading"><div><p class="eyebrow">AUTOMATION / {{if .New}}NEW{{else}}{{.Job.ID}}{{end}}</p><h1>{{if .New}}Make a new routine{{else}}Edit automation{{end}}<span class="accent">.</span></h1><p class="muted">Changes apply to future runs. Requests already in progress finish normally.</p></div></div>
+{{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+<form method="post" action="{{if .New}}/jobs/new{{else}}/jobs/{{.Job.ID}}{{end}}" class="editor"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Job.Revision}}">
+<section class="panel stack"><h2>The basics</h2>{{if .New}}<label>Unique ID<input name="id" value="{{.Job.ID}}" pattern="[a-z0-9][a-z0-9-]{0,63}" required maxlength="64" placeholder="daily-report"><small>Lowercase letters, digits and hyphens. This cannot be changed later.</small></label>{{end}}
+<label>Name<input name="name" value="{{.Job.Name}}" maxlength="100" required placeholder="Daily report"></label><label>Endpoint URL<input name="url" type="url" value="{{.Job.URL}}" required placeholder="https://example.com/api/tasks"><small>HTTPS endpoint receiving a single POST per execution.</small></label>
+<label>Request timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100" max="600000" step="1" value="{{if .Job.TimeoutMS}}{{.Job.TimeoutMS}}{{end}}" placeholder="{{.DefaultTimeoutMS}}"><small>100–600000 ms (up to 10 minutes). Leave blank to use the server default: {{.DefaultTimeoutMS}} ms. Applies to scheduled and manual runs.</small></label>
+<label>Authorization header<input name="authorization" type="password" autocomplete="new-password" maxlength="8192" placeholder="{{if .HasAuthorization}}Stored header · leave blank to keep{{else}}Bearer … (optional){{end}}"><small>Enter the full header value. Stored values are never displayed.</small></label>{{if .HasAuthorization}}<label class="check"><input type="checkbox" name="clear_authorization">Remove the stored authorization header</label>{{end}}
+<label>JSON body<textarea name="body" rows="6" required spellcheck="false">{{printf "%s" .Job.Body}}</textarea><small>{{if eq .Job.Policy "generic"}}A JSON object. Values keep their original types.{{else}}This saved task has legacy payload validation.{{end}}</small></label></section>
+<aside class="panel stack"><h2>When it runs</h2>{{if eq .Job.Policy "youtube-incremental"}}<input type="hidden" name="schedule_mode" value="manual"><p class="muted">This saved task is manual-only. Use Run now to trigger it.</p>{{else}}
+<label>Frequency<select name="schedule_mode">
+<option value="manual" {{if eq .Schedule.Mode "manual"}}selected{{end}}>Manual only</option>
+<option value="minutes" {{if eq .Schedule.Mode "minutes"}}selected{{end}}>Every few minutes</option>
+<option value="hourly" {{if eq .Schedule.Mode "hourly"}}selected{{end}}>Hourly</option>
+<option value="daily" {{if eq .Schedule.Mode "daily"}}selected{{end}}>Daily</option>
+<option value="weekly" {{if eq .Schedule.Mode "weekly"}}selected{{end}}>Weekly</option>
+<option value="monthly" {{if eq .Schedule.Mode "monthly"}}selected{{end}}>Monthly</option>
+<option value="custom" {{if eq .Schedule.Mode "custom"}}selected{{end}}>Advanced cron</option>
+</select></label>
+<label data-schedule-modes="minutes">Every<select name="schedule_interval">
+<option value="1" {{if eq .Schedule.Interval "1"}}selected{{end}}>1 minute</option>
+<option value="2" {{if eq .Schedule.Interval "2"}}selected{{end}}>2 minutes</option>
+<option value="3" {{if eq .Schedule.Interval "3"}}selected{{end}}>3 minutes</option>
+<option value="4" {{if eq .Schedule.Interval "4"}}selected{{end}}>4 minutes</option>
+<option value="5" {{if eq .Schedule.Interval "5"}}selected{{end}}>5 minutes</option>
+<option value="6" {{if eq .Schedule.Interval "6"}}selected{{end}}>6 minutes</option>
+<option value="10" {{if eq .Schedule.Interval "10"}}selected{{end}}>10 minutes</option>
+<option value="12" {{if eq .Schedule.Interval "12"}}selected{{end}}>12 minutes</option>
+<option value="15" {{if eq .Schedule.Interval "15"}}selected{{end}}>15 minutes</option>
+<option value="20" {{if eq .Schedule.Interval "20"}}selected{{end}}>20 minutes</option>
+<option value="30" {{if eq .Schedule.Interval "30"}}selected{{end}}>30 minutes</option>
+</select><small>Aligned to the start of each hour.</small></label>
+<label data-schedule-modes="hourly">Minute past the hour<input name="schedule_minute" type="number" min="0" max="59" value="{{.Schedule.Minute}}"></label>
+<label data-schedule-modes="daily weekly monthly">Time of day<input name="schedule_time" type="time" value="{{.Schedule.Time}}"><small>Uses the selected timezone.</small></label>
+<fieldset data-schedule-modes="weekly"><legend>Days of the week</legend><div class="weekdays">{{range .Weekdays}}<label class="check"><input type="checkbox" name="schedule_days" value="{{.Value}}" {{if .Selected}}checked{{end}}>{{.Label}}</label>{{end}}</div></fieldset>
+<label data-schedule-modes="monthly">Day of the month<input name="schedule_month_day" type="number" min="1" max="31" value="{{.Schedule.MonthDay}}"><small>Months without this day are skipped.</small></label>
+<label data-schedule-modes="custom">Cron expression<input name="cron" value="{{.Schedule.Cron}}" placeholder="*/15 * * * *"><small>Five fields, or six with seconds. Existing custom expressions are preserved.</small></label>
+{{end}}
+<label>Timezone<select name="timezone">{{range .Timezones}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select><small>Times follow this timezone, including daylight-saving changes. Skipped local times do not run; repeated times may run twice.</small></label>
+<label class="check"><input type="checkbox" name="enabled" {{if .Job.Enabled}}checked{{end}}>Enable scheduled runs</label><p class="muted">Run now works even when scheduled runs are disabled. New automations start disabled.</p><div class="note">Successful requests stay silent. Errors send a Telegram alert when Telegram is configured. Requests and alerts are never retried automatically.</div><button class="primary">Save automation <span>→</span></button><a class="cancel" href="/">Cancel</a></aside></form>
+{{if not .New}}<section class="manual-run panel"><h2>Run this task now</h2><p class="muted">Runs the saved configuration once, even when scheduled runs for this task are disabled. Save any changes first. Results appear in recent activity.</p><form method="post" action="/jobs/{{.Job.ID}}/run"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Job.Revision}}"><input type="hidden" name="run_token" value="{{.RunToken}}"><button class="run-button">Run now</button></form></section>{{end}}
+{{end}}
+<footer>SchedulerSE <span>Less overhead. More peace of mind.</span></footer></main>{{end}}
+</body></html>
