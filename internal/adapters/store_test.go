@@ -95,7 +95,7 @@ func TestOriginalJournalMigration(t *testing.T) {
 		t.Fatal("original journal dedup lost")
 	}
 	runs, err := s.Recent()
-	if err != nil || len(runs) != 1 || runs[0].Status != "success" {
+	if err != nil || len(runs) != 1 || runs[0].Status != "success" || runs[0].HTTPStatus != 0 || runs[0].DurationMS != -1 {
 		t.Fatalf("migration: %#v %v", runs, err)
 	}
 }

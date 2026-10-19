@@ -66,19 +66,22 @@ type jobView struct {
 	UsesTimezone bool
 }
 type view struct {
-	Page, Title, Error, CSRF, Username string
-	Timezone                           string
-	Jobs                               []jobView
-	Runs                               []domain.Run
-	Job                                domain.Job
-	New, HasAuthorization              bool
-	Schedule                           scheduleForm
-	Timezones, Weekdays                []choice
-	RunToken, Notice                   string
-	Telegram                           domain.TelegramSettings
-	HasBotToken                        bool
-	TestToken                          string
-	DefaultTimeoutMS                   int64
+	Page, Title, Error, CSRF, Username   string
+	Timezone                             string
+	Jobs                                 []jobView
+	Runs                                 []runView
+	Job                                  domain.Job
+	New, HasAuthorization                bool
+	Schedule                             scheduleForm
+	Timezones, Weekdays                  []choice
+	RunToken, Notice                     string
+	Telegram                             domain.TelegramSettings
+	HasBotToken                          bool
+	TestToken                            string
+	DefaultTimeoutMS                     int64
+	HistoryPage, HistoryPages            int
+	HistoryTotal, HistoryFrom, HistoryTo int
+	PreviousPage, NextPage               int
 }
 
 func New(s *adapters.Store, c adapters.Config, reload func(), token string) *Server {
@@ -349,12 +352,38 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request, csrf, user st
 		http.Error(w, "Job storage unavailable", 503)
 		return
 	}
-	runs, err := s.Store.Recent()
+	page := 1
+	if value := r.URL.Query().Get("page"); value != "" {
+		page, err = strconv.Atoi(value)
+		if err != nil || page < 1 {
+			http.Error(w, "Invalid history page", http.StatusBadRequest)
+			return
+		}
+	}
+	const pageSize = 25
+	history, err := s.Store.History(page, pageSize)
 	if err != nil {
 		http.Error(w, "Execution history unavailable", 503)
 		return
 	}
-	v := view{Page: "dashboard", Title: "Your automations", CSRF: csrf, Username: user, Timezone: s.Config.Timezone, Runs: runs}
+	if page != history.Page {
+		redirect(w, r, "/?page="+strconv.Itoa(history.Page)+"#activity")
+		return
+	}
+	v := view{Page: "dashboard", Title: "Your automations", CSRF: csrf, Username: user, Timezone: s.Config.Timezone, HistoryPage: history.Page, HistoryPages: history.Pages, HistoryTotal: history.Total}
+	for _, run := range history.Runs {
+		v.Runs = append(v.Runs, executionView(run))
+	}
+	if history.Total > 0 {
+		v.HistoryFrom = (history.Page-1)*pageSize + 1
+		v.HistoryTo = v.HistoryFrom + len(history.Runs) - 1
+	}
+	if history.Page > 1 {
+		v.PreviousPage = history.Page - 1
+	}
+	if history.Page < history.Pages {
+		v.NextPage = history.Page + 1
+	}
 	v.RunToken = rand.Text()
 	if r.URL.Query().Get("run") == "started" {
 		v.Notice = "Run started. Refresh recent activity to see the result."

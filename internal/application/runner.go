@@ -8,7 +8,7 @@ import (
 )
 
 type Sync interface {
-	Post(context.Context, domain.Job) (string, error)
+	Post(context.Context, domain.Job) (domain.Response, error)
 }
 type Notifications interface {
 	Notify(context.Context, domain.NotificationType, string) error
@@ -40,6 +40,9 @@ func (r *Runner) Prepare(ctx context.Context, j domain.Job, slot string) (func()
 	if ctx.Err() != nil {
 		return nil, nil
 	}
+	if j.TimeoutMS == 0 {
+		j.TimeoutMS = int(r.Timeout / time.Millisecond)
+	}
 	ok, err := r.Store.Begin(j, slot)
 	if err != nil {
 		r.Log.Event("journal_error", map[string]any{"job": j.ID})
@@ -53,6 +56,7 @@ func (r *Runner) Prepare(ctx context.Context, j domain.Job, slot string) (func()
 }
 
 func (r *Runner) execute(ctx context.Context, j domain.Job, slot string) (*domain.Outcome, error) {
+	started := time.Now()
 	r.Log.Event("run_started", map[string]any{"job": j.ID, "slot": slot})
 	outcome := domain.Outcome{Status: "success", Notification: "none"}
 	timeout := r.Timeout
@@ -60,7 +64,8 @@ func (r *Runner) execute(ctx context.Context, j domain.Job, slot string) (*domai
 		timeout = time.Duration(j.TimeoutMS) * time.Millisecond
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, timeout)
-	authMethod, requestErr := r.Sync.Post(requestCtx, j)
+	response, requestErr := r.Sync.Post(requestCtx, j)
+	outcome.HTTPStatus = response.HTTPStatus
 	cancel()
 	alert := ""
 	kind := domain.NotificationSuccess
@@ -74,10 +79,14 @@ func (r *Runner) execute(ctx context.Context, j domain.Job, slot string) (*domai
 			if !errors.As(requestErr, &f) {
 				f = &domain.Failure{Code: "request_failed"}
 			}
+			outcome.ErrorCode = f.Code
+			if outcome.HTTPStatus == 0 {
+				outcome.HTTPStatus = f.Status
+			}
 			alert = domain.ErrorAlert(j, f)
 			r.Log.Event("request_failed", map[string]any{"job": j.ID, "code": f.Code, "status": f.Status})
 		}
-	} else if domain.IsYouTube(j) && authMethod == "api-key" {
+	} else if domain.IsYouTube(j) && response.AuthMethod == "api-key" {
 		outcome.Status = "fallback"
 		kind = domain.NotificationFallback
 		alert = domain.FallbackAlert(j)
@@ -97,6 +106,7 @@ func (r *Runner) execute(ctx context.Context, j domain.Job, slot string) (*domai
 			outcome.Notification = "sent"
 		}
 	}
+	outcome.DurationMS = time.Since(started).Milliseconds()
 	if err := r.Store.Finish(j.ID, slot, outcome); err != nil {
 		r.Log.Event("journal_error", map[string]any{"job": j.ID})
 		return &outcome, err

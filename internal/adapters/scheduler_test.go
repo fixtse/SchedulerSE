@@ -56,9 +56,9 @@ func TestDefaultsDSTAndValidation(t *testing.T) {
 
 type scheduleSync struct{ calls chan string }
 
-func (f scheduleSync) Post(_ context.Context, j domain.Job) (string, error) {
+func (f scheduleSync) Post(_ context.Context, j domain.Job) (domain.Response, error) {
 	f.calls <- j.ID
-	return "", nil
+	return domain.Response{HTTPStatus: 200}, nil
 }
 
 type quietLog struct{}

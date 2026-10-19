@@ -68,8 +68,8 @@ func TestHTTPContractsAndSingleAttempt(t *testing.T) {
 	defer server.Close()
 	h := NewHTTP(Config{Timeout: time.Second, TelegramToken: "test", TelegramChat: "chat", TelegramURL: server.URL})
 	j := domain.Job{URL: server.URL + "/sync", Authorization: "Bearer test-only", Body: []byte(`{"fullSync":"true"}`), Policy: "youtube-full"}
-	if auth, err := h.Post(context.Background(), j); err != nil || auth != "api-key" {
-		t.Fatalf("sync: %s %v", auth, err)
+	if auth, err := h.Post(context.Background(), j); err != nil || auth.AuthMethod != "api-key" || auth.HTTPStatus != 200 {
+		t.Fatalf("sync: %+v %v", auth, err)
 	}
 	if err := h.Send(context.Background(), "alert"); err != nil {
 		t.Fatal(err)
@@ -87,10 +87,14 @@ func TestHTTPContractsAndSingleAttempt(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
-			_, err := h.Post(ctx, j)
+			response, err := h.Post(ctx, j)
 			var f *domain.Failure
 			if !errors.As(err, &f) || f.Code != tc.code || f.Status != tc.status {
 				t.Fatalf("wrong failure: %#v", err)
+			}
+			wantStatus := map[string]int{"error": 503, "redirect": 307, "invalid": 200, "large": 200, "slow": 0}[tc.path]
+			if response.HTTPStatus != wantStatus {
+				t.Fatalf("response status not retained: %d", response.HTTPStatus)
 			}
 			if strings.Contains(err.Error(), "private") {
 				t.Fatal("leaked response")

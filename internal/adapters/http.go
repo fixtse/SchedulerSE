@@ -24,10 +24,10 @@ func NewHTTP(c Config) *HTTP {
 	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: (&net.Dialer{Timeout: 10 * time.Second}).DialContext, TLSHandshakeTimeout: 10 * time.Second, DisableKeepAlives: true, TLSNextProto: map[string]func(string, *tls.Conn) http.RoundTripper{}}
 	return &HTTP{Client: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, Token: c.TelegramToken, Chat: c.TelegramChat, TelegramURL: c.TelegramURL, RequestTimeout: c.Timeout}
 }
-func (h *HTTP) post(ctx context.Context, endpoint, auth string, body []byte) ([]byte, error) {
+func (h *HTTP) post(ctx context.Context, endpoint, auth string, body []byte) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, &domain.Failure{Code: "NETWORK_ERROR"}
+		return nil, 0, &domain.Failure{Code: "NETWORK_ERROR"}
 	}
 	req.GetBody = nil
 	req.Header.Set("Content-Type", "application/json")
@@ -40,29 +40,29 @@ func (h *HTTP) post(ctx context.Context, endpoint, auth string, body []byte) ([]
 		if ctx.Err() != nil {
 			code = "REQUEST_ABORTED"
 		}
-		return nil, &domain.Failure{Code: code}
+		return nil, 0, &domain.Failure{Code: code}
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 300 && res.StatusCode < 400 {
-		return nil, &domain.Failure{Code: "NETWORK_ERROR"}
+		return nil, res.StatusCode, &domain.Failure{Code: "NETWORK_ERROR"}
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, &domain.Failure{Code: "HTTP_ERROR", Status: res.StatusCode}
+		return nil, res.StatusCode, &domain.Failure{Code: "HTTP_ERROR", Status: res.StatusCode}
 	}
 	data, err := io.ReadAll(io.LimitReader(res.Body, 1_000_001))
 	if len(data) > 1_000_000 {
-		return nil, &domain.Failure{Code: "response_too_large"}
+		return nil, res.StatusCode, &domain.Failure{Code: "response_too_large"}
 	}
 	if err != nil {
 		code := "NETWORK_ERROR"
 		if ctx.Err() != nil {
 			code = "REQUEST_ABORTED"
 		}
-		return nil, &domain.Failure{Code: code}
+		return nil, res.StatusCode, &domain.Failure{Code: code}
 	}
-	return data, nil
+	return data, res.StatusCode, nil
 }
-func (h *HTTP) Post(ctx context.Context, j domain.Job) (string, error) {
+func (h *HTTP) Post(ctx context.Context, j domain.Job) (domain.Response, error) {
 	timeout := h.RequestTimeout
 	if j.TimeoutMS > 0 {
 		timeout = time.Duration(j.TimeoutMS) * time.Millisecond
@@ -72,29 +72,31 @@ func (h *HTTP) Post(ctx context.Context, j domain.Job) (string, error) {
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	data, err := h.post(ctx, j.URL, j.Authorization, j.Body)
+	data, status, err := h.post(ctx, j.URL, j.Authorization, j.Body)
+	response := domain.Response{HTTPStatus: status}
 	if err != nil {
-		return "", err
+		return response, err
 	}
 	if !domain.IsYouTube(j) {
-		return "", nil
+		return response, nil
 	}
 	var value any
 	if json.Unmarshal(data, &value) != nil {
-		return "", &domain.Failure{Code: "INVALID_JSON"}
+		return response, &domain.Failure{Code: "INVALID_JSON"}
 	}
 	if obj, ok := value.(map[string]any); ok {
 		s, _ := obj["authMethod"].(string)
-		return s, nil
+		response.AuthMethod = s
+		return response, nil
 	}
-	return "", nil
+	return response, nil
 }
 func (h *HTTP) Send(ctx context.Context, text string) error {
 	if h.Token == "" || h.Chat == "" {
 		return &domain.Failure{Code: "TELEGRAM_NOT_CONFIGURED"}
 	}
 	body, _ := json.Marshal(map[string]any{"chat_id": h.Chat, "text": text, "link_preview_options": map[string]bool{"is_disabled": true}})
-	data, err := h.post(ctx, strings.TrimRight(h.TelegramURL, "/")+"/bot"+h.Token+"/sendMessage", "", body)
+	data, _, err := h.post(ctx, strings.TrimRight(h.TelegramURL, "/")+"/bot"+h.Token+"/sendMessage", "", body)
 	if err != nil {
 		return err
 	}

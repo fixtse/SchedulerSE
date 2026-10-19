@@ -81,6 +81,18 @@ Runs continue in the background; refresh recent activity to see the result. Dupl
 form submissions and overlapping runs of the same task are rejected. Running a task
 manually does not enable its schedule.
 
+## Execution history
+
+Recent activity shows 25 runs per page with **Newer** and **Older** navigation. Click
+any row or its chevron to expand the run details: manual or scheduled trigger, start
+and finish times, total duration, HTTP status, error code, request timeout, saved task
+revision, and Telegram delivery result. The run captures the task name and settings
+at execution time. Response bodies and authorization headers are not saved in history.
+
+Older runs remain available after upgrading. Fields that were not collected by older
+releases show **Not recorded**; their duration is estimated from saved timestamps.
+Failed or interrupted requests are never retried automatically.
+
 ## Telegram notifications
 
 Open **Telegram settings** after signing in. Enter the bot token from @BotFather and

@@ -71,6 +71,10 @@ func OpenStore(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err = migrateRunDetails(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if err = migrateTelegramNotifications(db); err != nil {
 		db.Close()
 		return nil, err
@@ -105,7 +109,7 @@ func (s *Store) Recover() error {
 	return err
 }
 func (s *Store) Begin(j domain.Job, slot string) (bool, error) {
-	result, err := s.DB.Exec(`INSERT OR IGNORE INTO runs(job,slot,status) SELECT ?,?,'running' WHERE EXISTS(SELECT 1 FROM jobs WHERE id=? AND revision=? AND (enabled=1 OR ?))`, j.ID, slot, j.ID, j.Revision, strings.HasPrefix(slot, "manual:"))
+	result, err := s.DB.Exec(`INSERT OR IGNORE INTO runs(job,slot,status,job_name,job_revision,timeout_ms) SELECT ?,?,'running',?,?,? WHERE EXISTS(SELECT 1 FROM jobs WHERE id=? AND revision=? AND (enabled=1 OR ?))`, j.ID, slot, j.Name, j.Revision, j.TimeoutMS, j.ID, j.Revision, strings.HasPrefix(slot, "manual:"))
 	if err != nil {
 		return false, err
 	}
@@ -113,7 +117,7 @@ func (s *Store) Begin(j domain.Job, slot string) (bool, error) {
 	return n == 1, err
 }
 func (s *Store) Finish(id, slot string, o domain.Outcome) error {
-	result, err := s.DB.Exec("UPDATE runs SET status=?,notification=?,finished=CURRENT_TIMESTAMP WHERE job=? AND slot=? AND status='running'", o.Status, o.Notification, id, slot)
+	result, err := s.DB.Exec("UPDATE runs SET status=?,notification=?,http_status=?,error_code=?,duration_ms=?,finished=CURRENT_TIMESTAMP WHERE job=? AND slot=? AND status='running'", o.Status, o.Notification, o.HTTPStatus, o.ErrorCode, o.DurationMS, id, slot)
 	if err != nil {
 		return err
 	}
@@ -181,20 +185,8 @@ func (s *Store) Save(j domain.Job, create bool) error {
 	return nil
 }
 func (s *Store) Recent() ([]domain.Run, error) {
-	rows, err := s.DB.Query("SELECT job,slot,status,notification,started,COALESCE(finished,'') FROM runs ORDER BY started DESC,rowid DESC LIMIT 30")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	list := []domain.Run{}
-	for rows.Next() {
-		var r domain.Run
-		if err := rows.Scan(&r.Job, &r.Slot, &r.Status, &r.Notification, &r.Started, &r.Finished); err != nil {
-			return nil, err
-		}
-		list = append(list, r)
-	}
-	return list, rows.Err()
+	page, err := s.History(1, 30)
+	return page.Runs, err
 }
 func (s *Store) Account() (string, []byte, error) {
 	var user string

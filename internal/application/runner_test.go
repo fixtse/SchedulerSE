@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-type syncFunc func(context.Context, domain.Job) (string, error)
+type syncFunc func(context.Context, domain.Job) (domain.Response, error)
 
-func (f syncFunc) Post(ctx context.Context, j domain.Job) (string, error) { return f(ctx, j) }
+func (f syncFunc) Post(ctx context.Context, j domain.Job) (domain.Response, error) { return f(ctx, j) }
 
 type alerts struct {
 	messages []string
@@ -75,15 +75,15 @@ func TestRunnerContracts(t *testing.T) {
 			calls := 0
 			a := &alerts{fail: tc.notifyFails}
 			l := &logs{}
-			r := application.Runner{Store: store, Notifications: a, Log: l, Timeout: time.Second, Sync: syncFunc(func(context.Context, domain.Job) (string, error) {
+			r := application.Runner{Store: store, Notifications: a, Log: l, Timeout: time.Second, Sync: syncFunc(func(context.Context, domain.Job) (domain.Response, error) {
 				calls++
 				if tc.code == "private" {
-					return "", errors.New("private-token")
+					return domain.Response{}, errors.New("private-token")
 				}
 				if tc.code != "" {
-					return "", &domain.Failure{Code: tc.code, Status: tc.httpStatus}
+					return domain.Response{}, &domain.Failure{Code: tc.code, Status: tc.httpStatus}
 				}
-				return tc.auth, nil
+				return domain.Response{AuthMethod: tc.auth, HTTPStatus: 200}, nil
 			})}
 			out, err := r.Run(context.Background(), j, "slot")
 			if err != nil || out == nil || out.Status != tc.wantStatus {
@@ -95,6 +95,21 @@ func TestRunnerContracts(t *testing.T) {
 				}
 			} else if len(a.messages) != 1 || a.messages[0] != tc.wantAlert {
 				t.Fatal(a.messages)
+			}
+			if tc.code != "" {
+				wantCode := tc.code
+				if wantCode == "private" {
+					wantCode = "request_failed"
+				}
+				if out.ErrorCode != wantCode || out.HTTPStatus != tc.httpStatus {
+					t.Fatalf("safe failure details missing: %v", out)
+				}
+			} else if out.HTTPStatus != 200 {
+				t.Fatal("successful response status not captured")
+			}
+			history, err := store.Recent()
+			if err != nil || len(history) != 1 || history[0].ErrorCode != out.ErrorCode || history[0].HTTPStatus != out.HTTPStatus || history[0].DurationMS < 0 || history[0].TimeoutMS != 1000 {
+				t.Fatal("execution metadata was not journaled")
 			}
 			if tc.notifyFails && out.Notification != "failed" {
 				t.Fatal(out)
@@ -120,10 +135,10 @@ func TestShutdownInterruptsWithoutAlert(t *testing.T) {
 	j, _ = store.Job("test")
 	started := make(chan struct{})
 	a := &alerts{}
-	r := application.Runner{Store: store, Notifications: a, Log: &logs{}, Timeout: time.Second, Sync: syncFunc(func(ctx context.Context, _ domain.Job) (string, error) {
+	r := application.Runner{Store: store, Notifications: a, Log: &logs{}, Timeout: time.Second, Sync: syncFunc(func(ctx context.Context, _ domain.Job) (domain.Response, error) {
 		close(started)
 		<-ctx.Done()
-		return "", ctx.Err()
+		return domain.Response{}, ctx.Err()
 	})}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan *domain.Outcome)
@@ -150,8 +165,8 @@ func TestDisabledNotificationsRemainSilent(t *testing.T) {
 	j, _ = store.Job(j.ID)
 	// No HTTP adapter is needed: disabled settings must return before any I/O.
 	notifications := &adapters.Telegram{Store: store}
-	runner := application.Runner{Store: store, Notifications: notifications, Log: &logs{}, Timeout: time.Second, Sync: syncFunc(func(context.Context, domain.Job) (string, error) {
-		return "", &domain.Failure{Code: "HTTP_ERROR", Status: 503}
+	runner := application.Runner{Store: store, Notifications: notifications, Log: &logs{}, Timeout: time.Second, Sync: syncFunc(func(context.Context, domain.Job) (domain.Response, error) {
+		return domain.Response{}, &domain.Failure{Code: "HTTP_ERROR", Status: 503}
 	})}
 	out, err := runner.Run(context.Background(), j, "manual:test")
 	if err != nil || out == nil || out.Status != "failed" || out.Notification != "none" {
@@ -183,14 +198,14 @@ func TestRunnerUsesPerJobTimeout(t *testing.T) {
 			}
 			j, _ = store.Job(j.ID)
 			calls := 0
-			runner := application.Runner{Store: store, Notifications: &alerts{}, Log: &logs{}, Timeout: time.Minute, Sync: syncFunc(func(ctx context.Context, _ domain.Job) (string, error) {
+			runner := application.Runner{Store: store, Notifications: &alerts{}, Log: &logs{}, Timeout: time.Minute, Sync: syncFunc(func(ctx context.Context, _ domain.Job) (domain.Response, error) {
 				calls++
 				deadline, ok := ctx.Deadline()
 				remaining := time.Until(deadline)
 				if !ok || remaining <= 0 || remaining > tc.want || tc.want-remaining > time.Second {
 					t.Errorf("request deadline %s; expected %s budget", remaining, tc.want)
 				}
-				return "", nil
+				return domain.Response{}, nil
 			})}
 			out, err := runner.Run(context.Background(), j, "manual:timeout")
 			if err != nil || out == nil || out.Status != "success" || calls != 1 {
@@ -225,12 +240,12 @@ func TestRunnerCompletionNotificationTypesAndDedup(t *testing.T) {
 			j, _ = store.Job(j.ID)
 			a := &alerts{success: true}
 			calls := 0
-			runner := application.Runner{Store: store, Notifications: a, Log: &logs{}, Timeout: time.Second, Sync: syncFunc(func(context.Context, domain.Job) (string, error) {
+			runner := application.Runner{Store: store, Notifications: a, Log: &logs{}, Timeout: time.Second, Sync: syncFunc(func(context.Context, domain.Job) (domain.Response, error) {
 				calls++
 				if tc.failure {
-					return "", &domain.Failure{Code: "HTTP_ERROR", Status: 503}
+					return domain.Response{}, &domain.Failure{Code: "HTTP_ERROR", Status: 503}
 				}
-				return tc.auth, nil
+				return domain.Response{AuthMethod: tc.auth, HTTPStatus: 200}, nil
 			})}
 			out, err := runner.Run(context.Background(), j, "manual:one")
 			if err != nil || out == nil || out.Status != string(tc.kind) || out.Notification != "sent" || len(a.kinds) != 1 || a.kinds[0] != tc.kind || len(a.messages) != 1 {

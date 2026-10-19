@@ -20,8 +20,23 @@ type Job struct {
 	Revision      int64           `json:"revision"`
 }
 
-type Outcome struct{ Status, Notification string }
-type Run struct{ Job, Slot, Status, Notification, Started, Finished string }
+type Response struct {
+	AuthMethod string
+	HTTPStatus int
+}
+
+type Outcome struct {
+	Status, Notification, ErrorCode string
+	HTTPStatus                      int
+	DurationMS                      int64
+}
+
+type Run struct {
+	Job, Slot, Status, Notification, Started, Finished string
+	JobName, ErrorCode                                 string
+	JobRevision, DurationMS                            int64
+	HTTPStatus, TimeoutMS                              int
+}
 type Failure struct {
 	Code   string
 	Status int
