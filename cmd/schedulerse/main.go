@@ -181,6 +181,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	agentDone := make(chan struct{})
+	go func() { defer close(agentDone); store.ServeAgent(ctx, transport) }()
 	scheduledDone := make(chan struct{})
 	go func() { defer close(scheduledDone); scheduler.Serve(ctx) }()
 	serverErrors := make(chan error, 1)
@@ -198,6 +200,7 @@ func run() error {
 		_ = server.Close()
 	}
 	handler.Wait()
+	<-agentDone
 	select {
 	case <-scheduledDone:
 	case <-shutdownCtx.Done():

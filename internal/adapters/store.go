@@ -83,6 +83,10 @@ func OpenStore(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err = migrateAgent(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return s, nil
 }
 func (s *Store) Seed(jobs []domain.Job) error {
@@ -109,7 +113,7 @@ func (s *Store) Seed(jobs []domain.Job) error {
 	return tx.Commit()
 }
 func (s *Store) Recover() error {
-	_, err := s.DB.Exec("UPDATE runs SET status='interrupted',finished=CURRENT_TIMESTAMP WHERE status='running'; UPDATE telegram_tests SET status='interrupted' WHERE status='running'")
+	_, err := s.DB.Exec("UPDATE agent_tasks SET status='interrupted',last_error='delivery_unconfirmed' WHERE status='delivering'; UPDATE runs SET status='interrupted',finished=CURRENT_TIMESTAMP WHERE status='running'; UPDATE telegram_tests SET status='interrupted' WHERE status='running'")
 	return err
 }
 func (s *Store) Begin(j domain.Job, slot string) (bool, error) {

@@ -11,6 +11,7 @@ RUN CGO_ENABLED=1 go build -trimpath github.com/mattn/go-sqlite3
 FROM dependencies AS build
 COPY cmd ./cmd
 COPY internal ./internal
+COPY skills ./skills
 RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/schedulerse ./cmd/schedulerse
 
 FROM build AS test

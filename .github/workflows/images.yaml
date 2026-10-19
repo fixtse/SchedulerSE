@@ -29,6 +29,12 @@ jobs:
         run: |
           cp .env.example .env
           make format-check check test compose-check
+      - name: Verify portable agent bridge and Worker syntax
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python3 -m unittest discover -s test -p 'test_agent_bridge.py'
+          node --check skills/schedulerse-agent/assets/cloudflare/worker.mjs
 
   image:
     needs: verify

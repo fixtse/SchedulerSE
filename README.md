@@ -81,6 +81,73 @@ Runs continue in the background; refresh recent activity to see the result. Dupl
 form submissions and overlapping runs of the same task are rejected. Running a task
 manually does not enable its schedule.
 
+## Agent timers, reminders and tasks
+
+Open **Agent API settings** after signing in:
+
+For guided setup, click **Download agent skill**, install the extracted
+`schedulerse-agent` folder in your agent, and ask it to connect to this installation.
+Provide the installation URL and API token privately. In T3 Code it uses a native
+webhook task through T3 Connect, so no extra webhook server or Cloudflare account is
+needed. The standalone Codex fallback includes a Cloudflare Worker/D1 inbox and a
+Python bridge that polls outbound, stores receipts durably and invokes Codex. The
+agent handles provisioning; the user still needs to authenticate Cloudflare and keep
+the bridge supervised. See [the portable skill](skills/schedulerse-agent/SKILL.md).
+Cloudflare offers free allowances, subject to its current quotas; no paid plan is
+required by this kit. The relay does not supply free AI inference.
+
+For manual setup:
+
+1. Save the webhook URL provided by your agent platform or your agent bridge.
+   Set a separate Authorization header that the receiving webhook verifies, or
+   use a native T3 receiver’s generated secret URL with a blank header.
+2. Generate an API token and copy it into your agent’s secret store. It is shown
+   once; only its SHA-256 hash is saved. Replacing or revoking it invalidates the
+   previous token immediately.
+3. Give the agent this installation’s URL and the **agent setup guide** linked in
+   settings. The guide is also available in
+   [agent-guide.md](internal/adapters/web/agent-guide.md).
+
+The bearer-authenticated JSON API at `/api/agent/v1` can create, list, inspect and
+cancel agent schedules. Tokens have access only to agent schedules, with no access
+to automation jobs, account settings or webhook credentials. There is one shared
+agent token and callback destination per installation; use this with trusted agents.
+The **Agent schedules** tab keeps these items separate from **Your automations**
+and its execution history. It shows status, UTC due time, recurrence, callback
+HTTP result, errors and routing context, and lets you cancel pending items.
+
+For example, an agent creates a timer with:
+
+```http
+POST /api/agent/v1/tasks
+Authorization: Bearer <generated-token>
+Content-Type: application/json
+
+{"id":"tea-timer-001","kind":"timer","title":"Tea is ready","after_seconds":180,"context":{"conversation_id":"chat-123"}}
+```
+
+Use `run_at` with an RFC3339 timestamp and explicit timezone offset for reminders
+at a particular time. Optional `interval_seconds` supports fixed elapsed time
+recurrence (minimum 60 seconds); calendar schedules remain available in automations.
+Stable caller-chosen IDs prevent duplicate creation after an uncertain API response.
+GET `/api/agent/v1/tasks/{id}` to check the result before retrying a creation.
+
+Each due item sends a `schedule.due` JSON callback with a stable occurrence
+`event_id`, the scheduled time, and the task’s message and unchanged `context`.
+The webhook receiver must durably accept the callback, return 2xx within 10 seconds,
+and route it to the intended agent/conversation. SchedulerSE supplies scheduling
+and delivery; the receiving platform supplies agent execution and user messaging.
+Use HTTPS for remote access to both the API and callback endpoint.
+
+Pending schedules persist across restarts and overdue items run when the service
+returns. Callbacks are attempted once without redirects or automatic retries;
+failed recurrences stop. In-flight deliveries interrupted by a crash are marked
+`interrupted` on startup and are not replayed. After a successful recurring callback,
+missed recurrence slots are skipped. Delivery is sequential and intended for lightweight
+reminders, not precise alarms or high-throughput queues. Removing the webhook pauses
+pending deliveries. Changing it applies to future callbacks. Revoking an API token
+blocks API access but leaves existing schedules active; cancel those separately.
+
 ## Retries and fallback
 
 In any task editor, choose **Retries after failure** (0–5 extra primary attempts)

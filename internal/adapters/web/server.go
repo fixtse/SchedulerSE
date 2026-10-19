@@ -66,6 +66,10 @@ type jobView struct {
 	UsesTimezone bool
 }
 type view struct {
+	AgentTasks                           []domain.AgentTask
+	AgentSettings                        domain.AgentSettings
+	HasAgentToken, HasWebhookAuth        bool
+	NewAgentToken                        string
 	Page, Title, Error, CSRF, Username   string
 	Timezone                             string
 	Jobs                                 []jobView
@@ -160,6 +164,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(stylesheet))
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/agent/") {
+		s.agentAPI(w, r)
+		return
+	}
 	if r.Method == http.MethodPost {
 		r.Body = http.MaxBytesReader(w, r.Body, 128<<10)
 		if r.ParseForm() != nil {
@@ -213,6 +221,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /settings/agent/skill.zip", serveAgentSkill)
+	mux.HandleFunc("GET /settings/agent/guide", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		_, _ = w.Write([]byte(agentGuide))
+	})
+	mux.HandleFunc("GET /agent", func(w http.ResponseWriter, r *http.Request) { s.agentPage(w, r, csrf, username) })
+	mux.HandleFunc("POST /agent/{id}/cancel", func(w http.ResponseWriter, r *http.Request) { s.cancelAgent(w, r, false) })
+	mux.HandleFunc("GET /settings/agent", func(w http.ResponseWriter, r *http.Request) { s.agentSettingsPage(w, r, csrf, username) })
+	mux.HandleFunc("POST /settings/agent", func(w http.ResponseWriter, r *http.Request) { s.saveAgentSettings(w, r, csrf, username) })
+	mux.HandleFunc("POST /settings/agent/token", func(w http.ResponseWriter, r *http.Request) { s.agentToken(w, r, csrf, username) })
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { s.dashboard(w, r, csrf, username) })
 	mux.HandleFunc("GET /settings/telegram", func(w http.ResponseWriter, r *http.Request) { s.telegramPage(w, r, csrf, username) })
 	mux.HandleFunc("POST /settings/telegram", func(w http.ResponseWriter, r *http.Request) { s.saveTelegram(w, r, csrf, username) })

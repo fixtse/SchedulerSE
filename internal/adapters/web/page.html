@@ -1,111 +1,372 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Title}} · SchedulerSE</title><link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48"><link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any"><link rel="stylesheet" href="/style.css"><script src="/schedule.js" defer></script></head>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>{{.Title}} · SchedulerSE</title>
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/schedule.js" defer></script>
+</head>
+
 <body>
-<header class="top"><a class="brand" href="/"><span class="mark">s</span> SchedulerSE<span class="brand-note">/ control room</span></a>{{if .Username}}<div class="account"><a href="/settings/telegram">Telegram settings</a><span>{{.Username}}</span><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="text-button">Sign out ↗</button></form></div>{{end}}</header>
-{{if or (eq .Page "setup") (eq .Page "login")}}
-<main class="auth-layout"><section class="auth-intro"><p class="eyebrow">SMALL SERVICE. EVERYTHING IN ORDER.</p><h1>Your routines.<br>A little more<br><em>under control.</em></h1><p class="intro-copy">One quiet place to manage the jobs that keep things moving.</p><div class="intro-bottom"><span class="dot"></span> Self-hosted &nbsp; / &nbsp; Built to stay light</div></section>
-<section class="auth-card"><p class="eyebrow">{{if eq .Page "setup"}}01 / FIRST-TIME SETUP{{else}}WELCOME BACK{{end}}</p><h2>{{.Title}}</h2><p class="muted">{{if eq .Page "setup"}}Create the administrator account for this installation.{{else}}Sign in to manage your automations.{{end}}</p>
-{{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
-<form method="post" action="/{{.Page}}" class="stack"><input type="hidden" name="csrf" value="{{.CSRF}}">
-{{if eq .Page "setup"}}<label>Setup token<input name="setup_token" type="password" required autocomplete="off"><small>Retrieve it from your server:<code>docker compose exec schedulerse /app/schedulerse setup-token</code></small></label>{{end}}
-<label>Username<input name="username" required minlength="3" maxlength="64" autocomplete="username" autofocus></label>
-<label>Password<input name="password" type="password" required {{if eq .Page "setup"}}minlength="12" maxlength="72" autocomplete="new-password"{{else}}autocomplete="current-password"{{end}}>{{if eq .Page "setup"}}<small>Use at least 12 characters. Choose a unique password.</small>{{end}}</label>
-{{if eq .Page "setup"}}<label>Confirm password<input name="confirm_password" type="password" required minlength="12" maxlength="72" autocomplete="new-password"></label>{{end}}
-<button class="primary">{{if eq .Page "setup"}}Create account{{else}}Sign in{{end}} <span>→</span></button></form><p class="fine">{{if eq .Page "setup"}}One administrator. No default credentials.{{else}}Your session expires after 12 hours.{{end}}</p></section></main>
-{{else}}
-<main class="workspace">
-{{if eq .Page "dashboard"}}
-<div class="page-heading"><div><p class="eyebrow">OVERVIEW / {{len .Jobs}} {{if eq (len .Jobs) 1}}AUTOMATION{{else}}AUTOMATIONS{{end}}</p><h1>Your automations<span class="accent">.</span></h1><p class="muted">A few small jobs. One less thing to think about.</p></div><a class="primary" href="/jobs/new">+ Add automation</a></div>
-{{if .Notice}}<div class="notice" role="status">{{.Notice}} <a href="/">Refresh activity →</a></div>{{end}}
-<div class="section-label"><h2>Automations</h2><span>POST requests · No automatic retries</span></div>
-<div class="jobs">{{range .Jobs}}<article class="job-card"><div class="card-top"><span class="job-icon">↗</span><span class="badge {{if .Enabled}}enabled{{end}}">{{if .Enabled}}Enabled{{else}}Disabled{{end}}</span></div><h3><a href="/jobs/{{.ID}}">{{.Name}}</a></h3><p class="endpoint">{{.URL}}</p><div class="job-meta"><span>Schedule</span><strong>{{.Schedule}}</strong>{{if .UsesTimezone}}<span>Timezone</span><strong>{{.Timezone}}</strong>{{end}}<span>Next run</span><strong>{{.Next}}</strong></div><div class="card-footer"><a href="/jobs/{{.ID}}">Edit automation →</a><form method="post" action="/jobs/{{.ID}}/run"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><input type="hidden" name="run_token" value="{{$.RunToken}}"><button class="run-button">Run now</button></form><form method="post" action="/jobs/{{.ID}}/toggle"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><button class="text-button">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></form></div></article>{{end}}</div>
-<div class="section-label history-heading" id="activity"><h2>Recent activity</h2><span>{{.HistoryTotal}} executions · 25 per page · UTC history</span></div>
-{{if .Runs}}<div class="activity-list">
-<div class="activity-header" aria-hidden="true"><span>Automation</span><span>Started (UTC)</span><span>Result</span><span>Notification</span><span></span></div>
-{{range .Runs}}<details class="activity-run"><summary class="activity-summary">
-<span class="activity-task"><strong>{{.JobName}}</strong><small>{{.Job}}</small></span><span class="activity-start">{{.Started}}</span><span class="activity-result"><span class="badge {{.Status}}">{{.Status}}</span></span><span class="activity-notification">{{.Notification}}</span>
-<svg class="activity-chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="m5 7 5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-</summary><div class="activity-details"><p>{{.Description}}</p><dl>
-<div><dt>Trigger</dt><dd>{{.Trigger}}</dd></div><div><dt>Started (UTC)</dt><dd>{{.Started}}</dd></div><div><dt>Finished (UTC)</dt><dd>{{if .Finished}}{{.Finished}}{{else}}In progress{{end}}</dd></div>
-<div><dt>Total duration</dt><dd>{{.Duration}}</dd></div><div><dt>HTTP status</dt><dd>{{if .HTTPStatus}}{{.HTTPStatus}}{{else}}Not recorded{{end}}</dd></div><div><dt>Error code</dt><dd>{{if .ErrorCode}}<code>{{.ErrorCode}}</code>{{else}}None recorded{{end}}</dd></div>
-<div><dt>Request attempts</dt><dd>{{if .Attempts}}{{.Attempts}}{{else}}Not recorded{{end}}</dd></div><div><dt>Fallback endpoint</dt><dd>{{if not .Attempts}}Not recorded{{else if .FallbackUsed}}Used after primary failure{{else}}Not used{{end}}</dd></div>
-<div><dt>Request timeout</dt><dd>{{if .TimeoutMS}}{{.TimeoutMS}} ms{{else}}Not recorded{{end}}</dd></div><div><dt>Saved task revision</dt><dd>{{if .JobRevision}}{{.JobRevision}}{{else}}Not recorded{{end}}</dd></div><div><dt>Telegram delivery</dt><dd>{{if eq .Notification "sent"}}Message accepted by Telegram{{else if eq .Notification "failed"}}Delivery failed or could not be confirmed; no automatic retry{{else}}No notification sent{{end}}</dd></div>
-<div class="activity-reference"><dt>Run reference</dt><dd><code>{{.Slot}}</code></dd></div>
-</dl></div></details>{{end}}</div>
-<nav class="history-pagination" aria-label="Execution history pages"><span>Showing {{.HistoryFrom}}–{{.HistoryTo}} of {{.HistoryTotal}}</span><div>{{if .PreviousPage}}<a href="/?page={{.PreviousPage}}#activity" rel="prev">← Newer</a>{{else}}<span aria-disabled="true">← Newer</span>{{end}}<span>Page {{.HistoryPage}} of {{.HistoryPages}}</span>{{if .NextPage}}<a href="/?page={{.NextPage}}#activity" rel="next">Older →</a>{{else}}<span aria-disabled="true">Older →</span>{{end}}</div></nav>
-{{else}}<div class="empty"><span>◷</span><h3>Nothing has run yet</h3><p>Execution results will appear here. Saving an automation never runs it.</p></div>{{end}}
+    <header class="top"><a class="brand" href="/"><span class="mark">s</span> SchedulerSE<span class="brand-note">/
+                control room</span></a>{{if .Username}}<div class="account"><a href="/settings/agent">Agent API settings</a><a href="/settings/telegram">Telegram
+                settings</a><span>{{.Username}}</span>
+            <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button
+                    class="text-button">Sign out ↗</button></form>
+        </div>{{end}}</header>
+    {{if or (eq .Page "setup") (eq .Page "login")}}
+    <main class="auth-layout">
+        <section class="auth-intro">
+            <p class="eyebrow">SMALL SERVICE. EVERYTHING IN ORDER.</p>
+            <h1>Your routines.<br>A little more<br><em>under control.</em></h1>
+            <p class="intro-copy">One quiet place to manage the jobs that keep things moving.</p>
+            <div class="intro-bottom"><span class="dot"></span> Self-hosted &nbsp; / &nbsp; Built to stay light</div>
+        </section>
+        <section class="auth-card">
+            <p class="eyebrow">{{if eq .Page "setup"}}01 / FIRST-TIME SETUP{{else}}WELCOME BACK{{end}}</p>
+            <h2>{{.Title}}</h2>
+            <p class="muted">{{if eq .Page "setup"}}Create the administrator account for this installation.{{else}}Sign
+                in to manage your automations.{{end}}</p>
+            {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+            <form method="post" action="/{{.Page}}" class="stack"><input type="hidden" name="csrf" value="{{.CSRF}}">
+                {{if eq .Page "setup"}}<label>Setup token<input name="setup_token" type="password" required
+                        autocomplete="off"><small>Retrieve it from your
+                        server:<code>docker compose exec schedulerse /app/schedulerse setup-token</code></small></label>{{end}}
+                <label>Username<input name="username" required minlength="3" maxlength="64" autocomplete="username"
+                        autofocus></label>
+                <label>Password<input name="password" type="password" required {{if eq .Page "setup" }}minlength="12"
+                        maxlength="72" autocomplete="new-password" {{else}}autocomplete="current-password" {{end}}>{{if
+                    eq .Page "setup"}}<small>Use at least 12 characters. Choose a unique
+                        password.</small>{{end}}</label>
+                {{if eq .Page "setup"}}<label>Confirm password<input name="confirm_password" type="password" required
+                        minlength="12" maxlength="72" autocomplete="new-password"></label>{{end}}
+                <button class="primary">{{if eq .Page "setup"}}Create account{{else}}Sign in{{end}}
+                    <span>→</span></button>
+            </form>
+            <p class="fine">{{if eq .Page "setup"}}One administrator. No default credentials.{{else}}Your session
+                expires after 12 hours.{{end}}</p>
+        </section>
+    </main>
+    {{else}}
+    <main class="workspace">
+<nav class="workspace-tabs" aria-label="Schedules"><a href="/" {{if eq .Page "dashboard"}}aria-current="page"{{end}}>Your automations</a><a href="/agent" {{if eq .Page "agent"}}aria-current="page"{{end}}>Agent schedules</a></nav>
+        {{if eq .Page "dashboard"}}
+        <div class="page-heading">
+            <div>
+                <p class="eyebrow">OVERVIEW / {{len .Jobs}} {{if eq (len .Jobs) 1}}AUTOMATION{{else}}AUTOMATIONS{{end}}
+                </p>
+                <h1>Your automations<span class="accent">.</span></h1>
+                <p class="muted">A few small jobs. One less thing to think about.</p>
+            </div><a class="primary" href="/jobs/new">+ Add automation</a>
+        </div>
+        {{if .Notice}}<div class="notice" role="status">{{.Notice}} <a href="/">Refresh activity →</a></div>{{end}}
+        <div class="section-label">
+            <h2>Automations</h2><span>POST requests</span>
+        </div>
+        <div class="jobs">{{range .Jobs}}<article class="job-card">
+                <div class="card-top"><span class="job-icon">↗</span><span
+                        class="badge {{if .Enabled}}enabled{{end}}">{{if .Enabled}}Enabled{{else}}Disabled{{end}}</span>
+                </div>
+                <h3><a href="/jobs/{{.ID}}">{{.Name}}</a></h3>
+                <p class="endpoint">{{.URL}}</p>
+                <div class="job-meta"><span>Schedule</span><strong>{{.Schedule}}</strong>{{if
+                    .UsesTimezone}}<span>Timezone</span><strong>{{.Timezone}}</strong>{{end}}<span>Next
+                        run</span><strong>{{.Next}}</strong></div>
+                <div class="card-footer"><a href="/jobs/{{.ID}}">Edit automation →</a>
+                    <form method="post" action="/jobs/{{.ID}}/run"><input type="hidden" name="csrf"
+                            value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><input
+                            type="hidden" name="run_token" value="{{$.RunToken}}"><button class="run-button">Run
+                            now</button></form>
+                    <form method="post" action="/jobs/{{.ID}}/toggle"><input type="hidden" name="csrf"
+                            value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><button
+                            class="text-button">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></form>
+                </div>
+            </article>{{end}}</div>
+        <div class="section-label history-heading" id="activity">
+            <h2>Recent activity</h2><span>{{.HistoryTotal}} executions · 25 per page · UTC history</span>
+        </div>
+        {{if .Runs}}<div class="activity-list">
+            <div class="activity-header" aria-hidden="true"><span>Automation</span><span>Started
+                    (UTC)</span><span>Result</span><span>Notification</span><span></span></div>
+            {{range .Runs}}<details class="activity-run">
+                <summary class="activity-summary">
+                    <span class="activity-task"><strong>{{.JobName}}</strong><small>{{.Job}}</small></span><span
+                        class="activity-start">{{.Started}}</span><span class="activity-result"><span
+                            class="badge {{.Status}}">{{.Status}}</span></span><span
+                        class="activity-notification">{{.Notification}}</span>
+                    <svg class="activity-chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+                        <path d="m5 7 5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.5"
+                            stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </summary>
+                <div class="activity-details">
+                    <p>{{.Description}}</p>
+                    <dl>
+                        <div>
+                            <dt>Trigger</dt>
+                            <dd>{{.Trigger}}</dd>
+                        </div>
+                        <div>
+                            <dt>Started (UTC)</dt>
+                            <dd>{{.Started}}</dd>
+                        </div>
+                        <div>
+                            <dt>Finished (UTC)</dt>
+                            <dd>{{if .Finished}}{{.Finished}}{{else}}In progress{{end}}</dd>
+                        </div>
+                        <div>
+                            <dt>Total duration</dt>
+                            <dd>{{.Duration}}</dd>
+                        </div>
+                        <div>
+                            <dt>HTTP status</dt>
+                            <dd>{{if .HTTPStatus}}{{.HTTPStatus}}{{else}}Not recorded{{end}}</dd>
+                        </div>
+                        <div>
+                            <dt>Error code</dt>
+                            <dd>{{if .ErrorCode}}<code>{{.ErrorCode}}</code>{{else}}None recorded{{end}}</dd>
+                        </div>
+                        <div>
+                            <dt>Request attempts</dt>
+                            <dd>{{if .Attempts}}{{.Attempts}}{{else}}Not recorded{{end}}</dd>
+                        </div>
+                        <div>
+                            <dt>Fallback endpoint</dt>
+                            <dd>{{if not .Attempts}}Not recorded{{else if .FallbackUsed}}Used after primary
+                                failure{{else}}Not used{{end}}</dd>
+                        </div>
+                        <div>
+                            <dt>Request timeout</dt>
+                            <dd>{{if .TimeoutMS}}{{.TimeoutMS}} ms{{else}}Not recorded{{end}}</dd>
+                        </div>
+                        <div>
+                            <dt>Saved task revision</dt>
+                            <dd>{{if .JobRevision}}{{.JobRevision}}{{else}}Not recorded{{end}}</dd>
+                        </div>
+                        <div>
+                            <dt>Telegram delivery</dt>
+                            <dd>{{if eq .Notification "sent"}}Message accepted by Telegram{{else if eq .Notification
+                                "failed"}}Delivery failed or could not be confirmed; no automatic retry{{else}}No
+                                notification sent{{end}}</dd>
+                        </div>
+                        <div class="activity-reference">
+                            <dt>Run reference</dt>
+                            <dd><code>{{.Slot}}</code></dd>
+                        </div>
+                    </dl>
+                </div>
+            </details>{{end}}
+        </div>
+        <nav class="history-pagination" aria-label="Execution history pages"><span>Showing
+                {{.HistoryFrom}}–{{.HistoryTo}} of {{.HistoryTotal}}</span>
+            <div>{{if .PreviousPage}}<a href="/?page={{.PreviousPage}}#activity" rel="prev">← Newer</a>{{else}}<span
+                    aria-disabled="true">← Newer</span>{{end}}<span>Page {{.HistoryPage}} of
+                    {{.HistoryPages}}</span>{{if .NextPage}}<a href="/?page={{.NextPage}}#activity" rel="next">Older
+                    →</a>{{else}}<span aria-disabled="true">Older →</span>{{end}}</div>
+        </nav>
+        {{else}}<div class="empty"><span>◷</span>
+            <h3>Nothing has run yet</h3>
+            <p>Execution results will appear here. Saving an automation never runs it.</p>
+        </div>{{end}}
+        {{else if eq .Page "agent"}}
+<div class="page-heading"><div><p class="eyebrow">TIMERS / REMINDERS / TASKS</p><h1>Agent schedules<span class="accent">.</span></h1><p class="muted">Schedules created through the agent API. Latest 200 items · all times UTC.</p></div><a class="primary" href="/settings/agent">Connect an agent →</a></div>
+<div class="jobs">{{range .AgentTasks}}<article class="job-card"><div class="card-top"><span>{{.Kind}}</span><span class="badge">{{.Status}}</span></div><h3>{{.Title}}</h3><p>{{.Message}}</p><dl class="job-meta"><dt>Reference</dt><dd>{{.ID}}</dd><dt>Scheduled time (UTC)</dt><dd>{{.DueUTC}}</dd><dt>Repeat</dt><dd>{{if .IntervalSeconds}}Every {{.IntervalSeconds}} seconds{{else}}Once{{end}}</dd><dt>Last HTTP status</dt><dd>{{if .HTTPStatus}}{{.HTTPStatus}}{{else}}None recorded{{end}}</dd>{{if .LastError}}<dt>Delivery error</dt><dd>{{.LastError}}</dd>{{end}}</dl><details><summary>Agent context</summary><pre class="agent-context">{{printf "%s" .Context}}</pre></details>{{if eq .Status "pending"}}<form method="post" action="/agent/{{.ID}}/cancel" class="card-footer"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="text-button">Cancel schedule</button></form>{{end}}</article>{{else}}<div class="empty"><h3>No agent schedules yet</h3><p>Configure a webhook and generate an API token in Agent API settings, then give the setup guide to your agent.</p></div>{{end}}</div>
+{{else if eq .Page "agent-settings"}}
+<div class="page-heading"><div><p class="eyebrow">SETTINGS / AGENT CONNECTION</p><h1>Agent API<span class="accent">.</span></h1><p class="muted">Let an agent schedule timers, reminders and tasks through a simple JSON API.</p></div></div>
+{{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}{{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
+{{if .NewAgentToken}}<div class="panel stack"><label>Your new API token<input readonly value="{{.NewAgentToken}}" autocomplete="off" aria-label="New API token"></label><p>Save this token in your agent’s secret store now. It cannot be displayed again.</p></div>{{end}}
+<div class="editor"><section class="panel stack"><h2>1. Callback webhook</h2><p class="muted">Use the receiving URL from your agent platform or a bridge that can wake your agent. Each callback contains the message and conversation context.</p><form class="stack" method="post" action="/settings/agent"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Webhook URL<input type="url" name="webhook_url" value="{{.AgentSettings.WebhookURL}}" maxlength="2048" placeholder="https://agent.example.com/hooks/reminder"><small>HTTPS required outside localhost. Leave blank to pause pending deliveries.</small></label><label>Webhook Authorization header<input type="password" name="webhook_authorization" autocomplete="new-password" maxlength="8192" placeholder="{{if .HasWebhookAuth}}Saved header · leave blank to keep{{else}}Bearer your-separate-webhook-secret{{end}}"><small>Your receiver should verify this separate secret before waking the agent.</small></label>{{if .HasWebhookAuth}}<label class="check"><input type="checkbox" name="clear_webhook_authorization">Remove saved webhook authorization</label>{{end}}<button class="primary">Save webhook →</button></form><p class="note">Callbacks are attempted once, with a 10-second timeout. Failed or interrupted deliveries are visible under Agent schedules. Changing this URL applies to all future callbacks.</p></section>
+<aside class="panel stack"><h2>2. API token</h2><p>{{if .HasAgentToken}}An API token is active.{{else}}No API token is active.{{end}} Tokens can manage only agent schedules.</p><form method="post" action="/settings/agent/token"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="generate"><button class="primary">{{if .HasAgentToken}}Replace API token{{else}}Generate API token{{end}}</button></form>{{if .HasAgentToken}}<form method="post" action="/settings/agent/token"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="revoke"><button class="text-button">Revoke API token</button></form>{{end}}<p class="note">Replacing or revoking immediately invalidates the old token. Existing schedules remain active; cancel them in Agent schedules.</p><h2>3. Connect your agent</h2><p><a class="run-button" href="/settings/agent/skill.zip">Download agent skill</a></p><p>Install the skill in your agent and ask it to connect to this installation. It guides T3 Code through its native webhook or sets up a Cloudflare inbox for other agents.</p><p>Give your agent the installation URL and API token privately. T3 Connect remote access or a persistent agent bridge must stay available. The <a href="/settings/agent/guide">agent setup guide</a> also documents the API directly.</p><p class="muted">API base: <code>/api/agent/v1</code>. The receiver routes callbacks using the context supplied by your agent.</p></aside></div>
 {{else if eq .Page "telegram"}}
-<a class="back" href="/">← All automations</a>
-<div class="page-heading"><div><p class="eyebrow">SETTINGS / NOTIFICATIONS</p><h1>Telegram notifications<span class="accent">.</span></h1><p class="muted">Choose which task events reach your Telegram chat.</p></div></div>
-{{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
-{{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
-<div class="editor"><form method="post" action="/settings/telegram" class="panel stack">
-<input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Telegram.Revision}}">
-<h2>Connection</h2>
-<label>Bot token<input name="bot_token" type="password" autocomplete="new-password" maxlength="256" placeholder="{{if .HasBotToken}}Saved token · leave blank to keep{{else}}123456789:…{{end}}"><small>Create a bot with @BotFather in Telegram and paste its token here. Saved tokens are never displayed.</small></label>
-{{if .HasBotToken}}<label class="check"><input name="clear_token" type="checkbox">Remove the saved bot token</label>{{end}}
-<label>Chat ID<input name="chat_id" value="{{.Telegram.Chat}}" maxlength="64" placeholder="-1001234567890"><small>Use a numeric chat ID or public channel @username. Start a conversation with the bot first, or add it to the group or channel with permission to send messages.</small></label>
-<label class="check"><input name="enabled" type="checkbox" {{if .Telegram.Enabled}}checked{{end}}>Enable Telegram notifications</label>
-<fieldset class="stack"><legend>Notification types</legend>
-<input type="hidden" name="notification_types_present" value="1">
-<label class="check"><input name="notify_failure" type="checkbox" {{if .Telegram.NotifyFailure}}checked{{end}}>Failures and timeouts</label>
-<label class="check"><input name="notify_success" type="checkbox" {{if .Telegram.NotifySuccess}}checked{{end}}>Successful completions</label>
-<label class="check"><input name="notify_fallback" type="checkbox" {{if .Telegram.NotifyFallback}}checked{{end}}>Fallback warnings</label>
-<small>Applies to scheduled and manual runs. Fallback warnings cover tasks that complete using a fallback endpoint or authentication method. Leave all types unchecked to silence task events while keeping the connection available for testing.</small>
-</fieldset>
-<p class="muted">Settings are saved in the persistent state volume and apply immediately. Some saved tasks require notifications and wait while Telegram is disabled.</p>
-<button class="primary">Save Telegram settings <span>→</span></button>
-</form><aside class="panel stack"><h2>Test the connection</h2><p class="muted">Save your changes first. Test sends one message using the saved bot token and chat ID, regardless of the selected notification types. Allow 10 seconds between tests.</p>
-<form method="post" action="/settings/telegram/test"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Telegram.Revision}}"><input type="hidden" name="test_token" value="{{.TestToken}}"><button class="run-button" {{if not .Telegram.Enabled}}disabled{{end}}>Test Telegram</button></form>
-<p class="note">Tests send real messages when you click the button. Messages are attempted once, without automatic retries.</p></aside></div>
-{{else if eq .Page "job"}}
-<a class="back" href="/">← All automations</a><div class="page-heading"><div><p class="eyebrow">AUTOMATION / {{if .New}}NEW{{else}}{{.Job.ID}}{{end}}</p><h1>{{if .New}}Make a new routine{{else}}Edit automation{{end}}<span class="accent">.</span></h1><p class="muted">Changes apply to future runs. Requests already in progress finish normally.</p></div></div>
-{{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
-<form method="post" action="{{if .New}}/jobs/new{{else}}/jobs/{{.Job.ID}}{{end}}" class="editor"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Job.Revision}}">
-<section class="panel stack"><h2>The basics</h2>{{if .New}}<label>Unique ID<input name="id" value="{{.Job.ID}}" pattern="[a-z0-9][a-z0-9-]{0,63}" required maxlength="64" placeholder="daily-report"><small>Lowercase letters, digits and hyphens. This cannot be changed later.</small></label>{{end}}
-<label>Name<input name="name" value="{{.Job.Name}}" maxlength="100" required placeholder="Daily report"></label><label>Endpoint URL<input name="url" type="url" value="{{.Job.URL}}" required placeholder="https://example.com/api/tasks"><small>HTTPS endpoint receiving a POST for each request attempt.</small></label>
-<label>Request timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100" max="600000" step="1" value="{{if .Job.TimeoutMS}}{{.Job.TimeoutMS}}{{end}}" placeholder="{{.DefaultTimeoutMS}}"><small>100–600000 ms (up to 10 minutes). Leave blank to use the server default: {{.DefaultTimeoutMS}} ms. Applies to scheduled and manual runs.</small></label>
-<label>Authorization header<input name="authorization" type="password" autocomplete="new-password" maxlength="8192" placeholder="{{if .HasAuthorization}}Stored header · leave blank to keep{{else}}Bearer … (optional){{end}}"><small>Enter the full header value. Stored values are never displayed.</small></label>{{if .HasAuthorization}}<label class="check"><input type="checkbox" name="clear_authorization">Remove the stored authorization header</label>{{end}}
-<label>JSON body<textarea name="body" rows="6" required spellcheck="false">{{printf "%s" .Job.Body}}</textarea><small>{{if eq .Job.Policy "generic"}}A JSON object. Values keep their original types.{{else}}This saved task has legacy payload validation.{{end}}</small></label>
-<h2>Retries and fallback</h2><input type="hidden" name="recovery_settings" value="1">
-<label>Retries after failure<input name="retry_count" type="number" min="0" max="5" step="1" value="{{.Job.RetryCount}}"><small>0 disables retries. Up to 5 extra attempts after HTTP 429 or 5xx responses. Only retry endpoints that can safely accept repeated POSTs.</small></label>
-<label>Delay between retries (milliseconds)<input name="retry_delay_ms" type="number" min="100" max="60000" step="1" value="{{if .Job.RetryDelayMS}}{{.Job.RetryDelayMS}}{{end}}" placeholder="1000"><small>Fixed delay of 100–60000 ms. Blank uses 1000 ms. The request timeout applies separately to each attempt.</small></label>
-<label>Fallback endpoint URL<input name="fallback_url" type="url" value="{{.Job.FallbackURL}}" placeholder="https://backup.example.com/api/tasks"><small>Optional. After eligible primary failures and any retries, send the same JSON body here once. Any HTTP 4xx/5xx failure can trigger fallback. Leave blank to disable.</small></label>
-<label>Fallback authorization header<input name="fallback_authorization" type="password" autocomplete="new-password" maxlength="8192" placeholder="{{if .HasFallbackAuth}}Stored header · leave blank to keep{{else}}Optional separate authorization{{end}}"><small>The primary authorization header is never copied to the fallback endpoint. Stored values are never displayed.</small></label>
-{{if .HasFallbackAuth}}<label class="check"><input type="checkbox" name="clear_fallback_authorization">Remove the stored fallback authorization header</label>{{end}}
-<label class="check"><input type="checkbox" name="retry_uncertain" {{if .Job.RetryUncertain}}checked{{end}}>Also recover after uncertain results</label><small>Allows configured retries and fallback after timeouts, network errors, redirects or unreadable responses. The original POST may already have completed; another attempt can duplicate its effects. Off by default.</small>
-</section>
-<aside class="panel stack"><h2>When it runs</h2>
-<label>Frequency<select name="schedule_mode">
-<option value="manual" {{if eq .Schedule.Mode "manual"}}selected{{end}}>Manual only</option>
-<option value="minutes" {{if eq .Schedule.Mode "minutes"}}selected{{end}}>Every few minutes</option>
-<option value="hourly" {{if eq .Schedule.Mode "hourly"}}selected{{end}}>Hourly</option>
-<option value="daily" {{if eq .Schedule.Mode "daily"}}selected{{end}}>Daily</option>
-<option value="weekly" {{if eq .Schedule.Mode "weekly"}}selected{{end}}>Weekly</option>
-<option value="monthly" {{if eq .Schedule.Mode "monthly"}}selected{{end}}>Monthly</option>
-<option value="custom" {{if eq .Schedule.Mode "custom"}}selected{{end}}>Advanced cron</option>
-</select></label>
-<label data-schedule-modes="minutes">Every<select name="schedule_interval">
-<option value="1" {{if eq .Schedule.Interval "1"}}selected{{end}}>1 minute</option>
-<option value="2" {{if eq .Schedule.Interval "2"}}selected{{end}}>2 minutes</option>
-<option value="3" {{if eq .Schedule.Interval "3"}}selected{{end}}>3 minutes</option>
-<option value="4" {{if eq .Schedule.Interval "4"}}selected{{end}}>4 minutes</option>
-<option value="5" {{if eq .Schedule.Interval "5"}}selected{{end}}>5 minutes</option>
-<option value="6" {{if eq .Schedule.Interval "6"}}selected{{end}}>6 minutes</option>
-<option value="10" {{if eq .Schedule.Interval "10"}}selected{{end}}>10 minutes</option>
-<option value="12" {{if eq .Schedule.Interval "12"}}selected{{end}}>12 minutes</option>
-<option value="15" {{if eq .Schedule.Interval "15"}}selected{{end}}>15 minutes</option>
-<option value="20" {{if eq .Schedule.Interval "20"}}selected{{end}}>20 minutes</option>
-<option value="30" {{if eq .Schedule.Interval "30"}}selected{{end}}>30 minutes</option>
-</select><small>Aligned to the start of each hour.</small></label>
-<label data-schedule-modes="hourly">Minute past the hour<input name="schedule_minute" type="number" min="0" max="59" value="{{.Schedule.Minute}}"></label>
-<label data-schedule-modes="daily weekly monthly">Time of day<input name="schedule_time" type="time" value="{{.Schedule.Time}}"><small>Uses the selected timezone.</small></label>
-<fieldset data-schedule-modes="weekly"><legend>Days of the week</legend><div class="weekdays">{{range .Weekdays}}<label class="check"><input type="checkbox" name="schedule_days" value="{{.Value}}" {{if .Selected}}checked{{end}}>{{.Label}}</label>{{end}}</div></fieldset>
-<label data-schedule-modes="monthly">Day of the month<input name="schedule_month_day" type="number" min="1" max="31" value="{{.Schedule.MonthDay}}"><small>Months without this day are skipped.</small></label>
-<label data-schedule-modes="custom">Cron expression<input name="cron" value="{{.Schedule.Cron}}" placeholder="*/15 * * * *"><small>Five fields, or six with seconds. Existing custom expressions are preserved.</small></label>
-<label data-schedule-modes="daily weekly monthly custom" {{if not .Schedule.UsesTimezone}}hidden{{end}}>Timezone<select name="timezone">{{range .Timezones}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select><small>Times follow this timezone, including daylight-saving changes. Skipped local times do not run; repeated times may run twice.</small></label>
-<label class="check"><input type="checkbox" name="enabled" {{if .Job.Enabled}}checked{{end}}>Enable scheduled runs</label><p class="muted">Run now works even when scheduled runs are disabled. New automations start disabled.</p><div class="note">Telegram messages follow the notification types selected in settings. Request retries follow this task’s recovery settings. Telegram sends are never retried automatically.</div><button class="primary">Save automation <span>→</span></button><a class="cancel" href="/">Cancel</a></aside></form>
-{{if not .New}}<section class="manual-run panel"><h2>Run this task now</h2><p class="muted">Starts one execution using the saved retry and fallback settings, even when scheduled runs for this task are disabled. Save any changes first. Results appear in recent activity.</p><form method="post" action="/jobs/{{.Job.ID}}/run"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Job.Revision}}"><input type="hidden" name="run_token" value="{{.RunToken}}"><button class="run-button">Run now</button></form></section>{{end}}
-{{end}}
-<footer>SchedulerSE <span>Less overhead. More peace of mind.</span></footer></main>{{end}}
-</body></html>
+        <a class="back" href="/">← All automations</a>
+        <div class="page-heading">
+            <div>
+                <p class="eyebrow">SETTINGS / NOTIFICATIONS</p>
+                <h1>Telegram notifications<span class="accent">.</span></h1>
+                <p class="muted">Choose which task events reach your Telegram chat.</p>
+            </div>
+        </div>
+        {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+        {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
+        <div class="editor">
+            <form method="post" action="/settings/telegram" class="panel stack">
+                <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision"
+                    value="{{.Telegram.Revision}}">
+                <h2>Connection</h2>
+                <label>Bot token<input name="bot_token" type="password" autocomplete="new-password" maxlength="256"
+                        placeholder="{{if .HasBotToken}}Saved token · leave blank to keep{{else}}123456789:…{{end}}"><small>Create
+                        a bot with @BotFather in Telegram and paste its token here. Saved tokens are never
+                        displayed.</small></label>
+                {{if .HasBotToken}}<label class="check"><input name="clear_token" type="checkbox">Remove the saved bot
+                    token</label>{{end}}
+                <label>Chat ID<input name="chat_id" value="{{.Telegram.Chat}}" maxlength="64"
+                        placeholder="-1001234567890"><small>Use a numeric chat ID or public channel @username. Start a
+                        conversation with the bot first, or add it to the group or channel with permission to send
+                        messages.</small></label>
+                <label class="check"><input name="enabled" type="checkbox" {{if .Telegram.Enabled}}checked{{end}}>Enable
+                    Telegram notifications</label>
+                <fieldset class="stack">
+                    <legend>Notification types</legend>
+                    <input type="hidden" name="notification_types_present" value="1">
+                    <label class="check"><input name="notify_failure" type="checkbox" {{if
+                            .Telegram.NotifyFailure}}checked{{end}}>Failures and timeouts</label>
+                    <label class="check"><input name="notify_success" type="checkbox" {{if
+                            .Telegram.NotifySuccess}}checked{{end}}>Successful completions</label>
+                    <label class="check"><input name="notify_fallback" type="checkbox" {{if
+                            .Telegram.NotifyFallback}}checked{{end}}>Fallback warnings</label>
+                    <small>Applies to scheduled and manual runs. Fallback warnings cover tasks that complete using a
+                        fallback endpoint or authentication method. Leave all types unchecked to silence task events
+                        while keeping the connection available for testing.</small>
+                </fieldset>
+                <p class="muted">Settings are saved in the persistent state volume and apply immediately. Some saved
+                    tasks require notifications and wait while Telegram is disabled.</p>
+                <button class="primary">Save Telegram settings <span>→</span></button>
+            </form>
+            <aside class="panel stack">
+                <h2>Test the connection</h2>
+                <p class="muted">Save your changes first. Test sends one message using the saved bot token and chat ID,
+                    regardless of the selected notification types. Allow 10 seconds between tests.</p>
+                <form method="post" action="/settings/telegram/test"><input type="hidden" name="csrf"
+                        value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Telegram.Revision}}"><input
+                        type="hidden" name="test_token" value="{{.TestToken}}"><button class="run-button" {{if not
+                        .Telegram.Enabled}}disabled{{end}}>Test Telegram</button></form>
+                <p class="note">Tests send real messages when you click the button. Messages are attempted once, without
+                    automatic retries.</p>
+            </aside>
+        </div>
+        {{else if eq .Page "job"}}
+        <a class="back" href="/">← All automations</a>
+        <div class="page-heading">
+            <div>
+                <p class="eyebrow">AUTOMATION / {{if .New}}NEW{{else}}{{.Job.ID}}{{end}}</p>
+                <h1>{{if .New}}Make a new routine{{else}}Edit automation{{end}}<span class="accent">.</span></h1>
+                <p class="muted">Changes apply to future runs. Requests already in progress finish normally.</p>
+            </div>
+        </div>
+        {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+        <form method="post" action="{{if .New}}/jobs/new{{else}}/jobs/{{.Job.ID}}{{end}}" class="editor"><input
+                type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision"
+                value="{{.Job.Revision}}">
+            <section class="panel stack">
+                <h2>The basics</h2>{{if .New}}<label>Unique ID<input name="id" value="{{.Job.ID}}"
+                        pattern="[a-z0-9][a-z0-9-]{0,63}" required maxlength="64"
+                        placeholder="daily-report"><small>Lowercase letters, digits and hyphens. This cannot be changed
+                        later.</small></label>{{end}}
+                <label>Name<input name="name" value="{{.Job.Name}}" maxlength="100" required
+                        placeholder="Daily report"></label><label>Endpoint URL<input name="url" type="url"
+                        value="{{.Job.URL}}" required placeholder="https://example.com/api/tasks"><small>HTTPS endpoint
+                        receiving a POST for each request attempt.</small></label>
+                <label>Request timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100"
+                        max="600000" step="1" value="{{if .Job.TimeoutMS}}{{.Job.TimeoutMS}}{{end}}"
+                        placeholder="{{.DefaultTimeoutMS}}"><small>100–600000 ms (up to 10 minutes). Leave blank to use
+                        the server default: {{.DefaultTimeoutMS}} ms. Applies to scheduled and manual
+                        runs.</small></label>
+                <label>Authorization header<input name="authorization" type="password" autocomplete="new-password"
+                        maxlength="8192"
+                        placeholder="{{if .HasAuthorization}}Stored header · leave blank to keep{{else}}Bearer … (optional){{end}}"><small>Enter
+                        the full header value. Stored values are never displayed.</small></label>{{if
+                .HasAuthorization}}<label class="check"><input type="checkbox" name="clear_authorization">Remove the
+                    stored authorization header</label>{{end}}
+                <label>JSON body<textarea name="body" rows="6" required
+                        spellcheck="false">{{printf "%s" .Job.Body}}</textarea><small>{{if eq .Job.Policy "generic"}}A
+                        JSON object. Values keep their original types.{{else}}This saved task has legacy payload
+                        validation.{{end}}</small></label>
+                <h2>Retries and fallback</h2><input type="hidden" name="recovery_settings" value="1">
+                <label>Retries after failure<input name="retry_count" type="number" min="0" max="5" step="1"
+                        value="{{.Job.RetryCount}}"><small>0 disables retries. Up to 5 extra attempts after HTTP 429 or
+                        5xx responses. Only retry endpoints that can safely accept repeated POSTs.</small></label>
+                <label>Delay between retries (milliseconds)<input name="retry_delay_ms" type="number" min="100"
+                        max="60000" step="1" value="{{if .Job.RetryDelayMS}}{{.Job.RetryDelayMS}}{{end}}"
+                        placeholder="1000"><small>Fixed delay of 100–60000 ms. Blank uses 1000 ms. The request timeout
+                        applies separately to each attempt.</small></label>
+                <label>Fallback endpoint URL<input name="fallback_url" type="url" value="{{.Job.FallbackURL}}"
+                        placeholder="https://backup.example.com/api/tasks"><small>Optional. After eligible primary
+                        failures and any retries, send the same JSON body here once. Any HTTP 4xx/5xx failure can
+                        trigger fallback. Leave blank to disable.</small></label>
+                <label>Fallback authorization header<input name="fallback_authorization" type="password"
+                        autocomplete="new-password" maxlength="8192"
+                        placeholder="{{if .HasFallbackAuth}}Stored header · leave blank to keep{{else}}Optional separate authorization{{end}}"><small>The
+                        primary authorization header is never copied to the fallback endpoint. Stored values are never
+                        displayed.</small></label>
+                {{if .HasFallbackAuth}}<label class="check"><input type="checkbox"
+                        name="clear_fallback_authorization">Remove the stored fallback authorization
+                    header</label>{{end}}
+                <label class="check"><input type="checkbox" name="retry_uncertain" {{if
+                        .Job.RetryUncertain}}checked{{end}}>Also recover after uncertain results</label><small>Allows
+                    configured retries and fallback after timeouts, network errors, redirects or unreadable responses.
+                    The original POST may already have completed; another attempt can duplicate its effects. Off by
+                    default.</small>
+            </section>
+            <aside class="panel stack">
+                <h2>When it runs</h2>
+                <label>Frequency<select name="schedule_mode">
+                        <option value="manual" {{if eq .Schedule.Mode "manual" }}selected{{end}}>Manual only</option>
+                        <option value="minutes" {{if eq .Schedule.Mode "minutes" }}selected{{end}}>Every few minutes
+                        </option>
+                        <option value="hourly" {{if eq .Schedule.Mode "hourly" }}selected{{end}}>Hourly</option>
+                        <option value="daily" {{if eq .Schedule.Mode "daily" }}selected{{end}}>Daily</option>
+                        <option value="weekly" {{if eq .Schedule.Mode "weekly" }}selected{{end}}>Weekly</option>
+                        <option value="monthly" {{if eq .Schedule.Mode "monthly" }}selected{{end}}>Monthly</option>
+                        <option value="custom" {{if eq .Schedule.Mode "custom" }}selected{{end}}>Advanced cron</option>
+                    </select></label>
+                <label data-schedule-modes="minutes">Every<select name="schedule_interval">
+                        <option value="1" {{if eq .Schedule.Interval "1" }}selected{{end}}>1 minute</option>
+                        <option value="2" {{if eq .Schedule.Interval "2" }}selected{{end}}>2 minutes</option>
+                        <option value="3" {{if eq .Schedule.Interval "3" }}selected{{end}}>3 minutes</option>
+                        <option value="4" {{if eq .Schedule.Interval "4" }}selected{{end}}>4 minutes</option>
+                        <option value="5" {{if eq .Schedule.Interval "5" }}selected{{end}}>5 minutes</option>
+                        <option value="6" {{if eq .Schedule.Interval "6" }}selected{{end}}>6 minutes</option>
+                        <option value="10" {{if eq .Schedule.Interval "10" }}selected{{end}}>10 minutes</option>
+                        <option value="12" {{if eq .Schedule.Interval "12" }}selected{{end}}>12 minutes</option>
+                        <option value="15" {{if eq .Schedule.Interval "15" }}selected{{end}}>15 minutes</option>
+                        <option value="20" {{if eq .Schedule.Interval "20" }}selected{{end}}>20 minutes</option>
+                        <option value="30" {{if eq .Schedule.Interval "30" }}selected{{end}}>30 minutes</option>
+                    </select><small>Aligned to the start of each hour.</small></label>
+                <label data-schedule-modes="hourly">Minute past the hour<input name="schedule_minute" type="number"
+                        min="0" max="59" value="{{.Schedule.Minute}}"></label>
+                <label data-schedule-modes="daily weekly monthly">Time of day<input name="schedule_time" type="time"
+                        value="{{.Schedule.Time}}"><small>Uses the selected timezone.</small></label>
+                <fieldset data-schedule-modes="weekly">
+                    <legend>Days of the week</legend>
+                    <div class="weekdays">{{range .Weekdays}}<label class="check"><input type="checkbox"
+                                name="schedule_days" value="{{.Value}}" {{if
+                                .Selected}}checked{{end}}>{{.Label}}</label>{{end}}</div>
+                </fieldset>
+                <label data-schedule-modes="monthly">Day of the month<input name="schedule_month_day" type="number"
+                        min="1" max="31" value="{{.Schedule.MonthDay}}"><small>Months without this day are
+                        skipped.</small></label>
+                <label data-schedule-modes="custom">Cron expression<input name="cron" value="{{.Schedule.Cron}}"
+                        placeholder="*/15 * * * *"><small>Five fields, or six with seconds. Existing custom expressions
+                        are preserved.</small></label>
+                <label data-schedule-modes="daily weekly monthly custom" {{if not
+                    .Schedule.UsesTimezone}}hidden{{end}}>Timezone<select name="timezone">{{range .Timezones}}<option
+                            value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                        {{end}}</select><small>Times follow this timezone, including daylight-saving changes. Skipped
+                        local times do not run; repeated times may run twice.</small></label>
+                <label class="check"><input type="checkbox" name="enabled" {{if .Job.Enabled}}checked{{end}}>Enable
+                    scheduled runs</label>
+                <p class="muted">Run now works even when scheduled runs are disabled. New automations start disabled.
+                </p>
+                <div class="note">Telegram messages follow the notification types selected in settings. Request retries
+                    follow this task’s recovery settings. Telegram sends are never retried automatically.</div><button
+                    class="primary">Save automation <span>→</span></button><a class="cancel" href="/">Cancel</a>
+            </aside>
+        </form>
+        {{if not .New}}<section class="manual-run panel">
+            <h2>Run this task now</h2>
+            <p class="muted">Starts one execution using the saved retry and fallback settings, even when scheduled runs
+                for this task are disabled. Save any changes first. Results appear in recent activity.</p>
+            <form method="post" action="/jobs/{{.Job.ID}}/run"><input type="hidden" name="csrf" value="{{.CSRF}}"><input
+                    type="hidden" name="revision" value="{{.Job.Revision}}"><input type="hidden" name="run_token"
+                    value="{{.RunToken}}"><button class="run-button">Run now</button></form>
+        </section>{{end}}
+        {{end}}
+        <footer>SchedulerSE <span>Less overhead. More peace of mind.</span></footer>
+    </main>{{end}}
+</body>
+
+</html>
