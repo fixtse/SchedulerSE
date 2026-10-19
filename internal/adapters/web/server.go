@@ -72,6 +72,7 @@ type view struct {
 	Runs                                 []runView
 	Job                                  domain.Job
 	New, HasAuthorization                bool
+	HasFallbackAuth                      bool
 	Schedule                             scheduleForm
 	Timezones, Weekdays                  []choice
 	RunToken, Notice                     string
@@ -405,6 +406,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request, csrf, user st
 		}
 		// Never pass stored headers into rendered views.
 		j.Authorization = ""
+		j.FallbackAuth = ""
 		v.Jobs = append(v.Jobs, jobView{j, next, scheduleDescription(j.Cron), readSchedule(j.Cron).UsesTimezone()})
 	}
 	render(w, 200, v)
@@ -452,6 +454,24 @@ func (s *Server) saveJob(w http.ResponseWriter, r *http.Request, csrf string, cr
 			}
 		}
 	}
+	if _, submitted := r.PostForm["recovery_settings"]; submitted {
+		var countErr, delayErr error
+		j.RetryCount, countErr = strconv.Atoi(r.PostFormValue("retry_count"))
+		j.RetryDelayMS = 0
+		if raw := strings.TrimSpace(r.PostFormValue("retry_delay_ms")); raw != "" {
+			j.RetryDelayMS, delayErr = strconv.Atoi(raw)
+		}
+		if countErr != nil || delayErr != nil {
+			timeoutErr = errors.New("retry count and delay must be whole numbers")
+		}
+		j.RetryUncertain = r.PostFormValue("retry_uncertain") == "on"
+		j.FallbackURL = strings.TrimSpace(r.PostFormValue("fallback_url"))
+		if auth := r.PostFormValue("fallback_authorization"); auth != "" {
+			j.FallbackAuth = auth
+		} else if r.PostFormValue("clear_fallback_authorization") == "on" {
+			j.FallbackAuth = ""
+		}
+	}
 	j.Enabled = r.PostFormValue("enabled") == "on"
 	if auth := r.PostFormValue("authorization"); auth != "" {
 		j.Authorization = auth
@@ -490,7 +510,9 @@ func (s *Server) saveJob(w http.ResponseWriter, r *http.Request, csrf string, cr
 
 func (s *Server) renderJob(w http.ResponseWriter, status int, csrf string, j domain.Job, create, has bool, schedule scheduleForm, message string) {
 	zone := adapters.JobTimezone(j, s.Config.Timezone)
-	render(w, status, view{Page: "job", Title: "Edit automation", CSRF: csrf, Job: j, New: create, HasAuthorization: has, Timezone: zone, Schedule: schedule, Timezones: timezoneChoices(zone, s.Config.Timezone), Weekdays: weekdayChoices(schedule.Days), Error: message, RunToken: rand.Text(), DefaultTimeoutMS: s.Config.Timeout.Milliseconds()})
+	hasFallback := j.FallbackAuth != ""
+	j.Authorization, j.FallbackAuth = "", ""
+	render(w, status, view{Page: "job", Title: "Edit automation", CSRF: csrf, Job: j, New: create, HasAuthorization: has, HasFallbackAuth: hasFallback, Timezone: zone, Schedule: schedule, Timezones: timezoneChoices(zone, s.Config.Timezone), Weekdays: weekdayChoices(schedule.Days), Error: message, RunToken: rand.Text(), DefaultTimeoutMS: s.Config.Timeout.Milliseconds()})
 }
 
 var runTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{26,128}$`)

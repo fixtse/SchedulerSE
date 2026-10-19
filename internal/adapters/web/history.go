@@ -42,7 +42,7 @@ func executionView(run domain.Run) runView {
 	case "fallback":
 		v.Description = "The task completed using fallback authentication."
 	case "interrupted":
-		v.Description = "The service stopped before a final result was recorded. The request may have reached the endpoint and was not retried."
+		v.Description = "The service stopped before a final result was recorded. The last request may have reached the endpoint. This execution will not resume automatically."
 	case "failed":
 		v.Description = "The task failed. Detailed errors were not recorded for this older run."
 		switch run.ErrorCode {
@@ -53,7 +53,7 @@ func executionView(run domain.Run) runView {
 		case "NETWORK_ERROR":
 			v.Description = "The endpoint could not be reached or the connection failed."
 			if run.HTTPStatus >= 300 && run.HTTPStatus < 400 {
-				v.Description = "The endpoint returned a redirect. Redirects are not followed and the request was not retried."
+				v.Description = "The endpoint returned a redirect. Redirects are not followed."
 			}
 		case "INVALID_JSON":
 			v.Description = "The endpoint returned invalid JSON where this task requires a JSON response."
@@ -62,6 +62,9 @@ func executionView(run domain.Run) runView {
 		case "request_failed":
 			v.Description = "The request failed. Check the endpoint configuration and service availability."
 		}
+	}
+	if run.FallbackUsed && run.Status == "fallback" {
+		v.Description = "The primary request failed; the fallback endpoint completed successfully."
 	}
 	return v
 }

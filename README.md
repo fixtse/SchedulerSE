@@ -81,17 +81,40 @@ Runs continue in the background; refresh recent activity to see the result. Dupl
 form submissions and overlapping runs of the same task are rejected. Running a task
 manually does not enable its schedule.
 
+## Retries and fallback
+
+In any task editor, choose **Retries after failure** (0–5 extra primary attempts)
+and a fixed delay (100–60000 ms; blank means 1000 ms). Retries apply to HTTP 429
+and 5xx failures. The request timeout applies separately to each attempt.
+
+Optionally set a **Fallback endpoint URL**. Once primary retries are exhausted
+(or for a non-retryable HTTP 4xx failure), the same JSON body is sent to that
+endpoint once. Set its authorization header separately; primary credentials are
+never copied. A successful fallback records a fallback result and uses the
+**Fallback warnings** Telegram preference. A failed fallback records a failure.
+
+Timeouts, network errors, redirects, and unreadable responses do not trigger
+recovery unless **Also recover after uncertain results** is selected. Such requests
+may already have completed. Even an HTTP error may follow side effects, so enable
+recovery only for endpoints that can safely accept repeated POSTs. Telegram sends
+are never retried. All attempts share one durable execution claim, preventing
+overlapping runs of that task. Restarting never resumes an interrupted execution.
+
+Existing tasks keep retries and fallback disabled until configured. To convert a
+manual task, edit it, select a frequency, and enable scheduled runs. Legacy payload
+validation and alert behavior remain in place.
+
 ## Execution history
 
 Recent activity shows 25 runs per page with **Newer** and **Older** navigation. Click
 any row or its chevron to expand the run details: manual or scheduled trigger, start
 and finish times, total duration, HTTP status, error code, request timeout, saved task
-revision, and Telegram delivery result. The run captures the task name and settings
+revision, request attempt count, fallback endpoint use, and Telegram delivery result. The run captures the task name and settings
 at execution time. Response bodies and authorization headers are not saved in history.
 
 Older runs remain available after upgrading. Fields that were not collected by older
 releases show **Not recorded**; their duration is estimated from saved timestamps.
-Failed or interrupted requests are never retried automatically.
+Retries are disabled by default. Interrupted executions never resume automatically.
 
 ## Telegram notifications
 
@@ -142,7 +165,7 @@ verification and publishing still work for forks and standalone installations.
 tasks. Keep the same `.env`, `TZ`, and state volume to retain schedules, timezones,
 authorization headers, payloads, enabled settings, account, and execution history.
 Compatibility handling retains the validation, alert behavior, credential requirements,
-and manual-only restrictions of tasks saved by older releases. These tasks are not
+of tasks saved by older releases. Any manual task can now be given a schedule. These tasks are not
 bundled into new installations. Old service-specific job environment variables are no
 longer read; edit existing tasks in the web interface.
 

@@ -63,7 +63,7 @@ func TestLegacyAndRunningExecutionDetails(t *testing.T) {
 		t.Fatal("legacy execution details changed or were invented")
 	}
 	interrupted := executionView(domain.Run{Status: "interrupted", DurationMS: -1})
-	if !strings.Contains(interrupted.Description, "was not retried") {
+	if !strings.Contains(interrupted.Description, "will not resume automatically") {
 		t.Fatal("interrupted run omitted its uncertain result")
 	}
 }

@@ -45,8 +45,8 @@ func TestDefaultsDSTAndValidation(t *testing.T) {
 		}
 	}
 	legacy := domain.Job{ID: "legacy", Name: "Legacy", URL: "http://127.0.0.1/mock", Body: []byte(`{"fullSync":"false"}`), Cron: "* * * * *", Policy: "youtube-incremental"}
-	if ValidateJob(legacy, c.Timezone) == nil {
-		t.Fatal("incremental schedule allowed")
+	if err := ValidateJob(legacy, c.Timezone); err != nil {
+		t.Fatal("manual task could not be scheduled:", err)
 	}
 	t.Setenv("COOKIE_SECURE", "yes")
 	if _, err := LoadConfig(); err == nil {

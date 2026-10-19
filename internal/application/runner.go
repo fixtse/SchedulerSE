@@ -16,6 +16,7 @@ type Notifications interface {
 type Runs interface {
 	Begin(domain.Job, string) (bool, error)
 	Finish(string, string, domain.Outcome) error
+	Attempt(string, string, bool) error
 }
 type Logger interface{ Event(string, map[string]any) }
 type Runner struct {
@@ -63,10 +64,13 @@ func (r *Runner) execute(ctx context.Context, j domain.Job, slot string) (*domai
 	if j.TimeoutMS > 0 {
 		timeout = time.Duration(j.TimeoutMS) * time.Millisecond
 	}
-	requestCtx, cancel := context.WithTimeout(ctx, timeout)
-	response, requestErr := r.Sync.Post(requestCtx, j)
+	response, requestErr, journalErr := r.request(ctx, j, slot, timeout, &outcome)
+	if journalErr != nil {
+		// Keep the durable claim active: an unjournaled POST must never be sent.
+		r.Log.Event("journal_error", map[string]any{"job": j.ID})
+		return &outcome, journalErr
+	}
 	outcome.HTTPStatus = response.HTTPStatus
-	cancel()
 	alert := ""
 	kind := domain.NotificationSuccess
 	if requestErr != nil {
@@ -86,6 +90,10 @@ func (r *Runner) execute(ctx context.Context, j domain.Job, slot string) (*domai
 			alert = domain.ErrorAlert(j, f)
 			r.Log.Event("request_failed", map[string]any{"job": j.ID, "code": f.Code, "status": f.Status})
 		}
+	} else if outcome.FallbackUsed {
+		outcome.Status = "fallback"
+		kind = domain.NotificationFallback
+		alert = "Task completed using its fallback endpoint: " + j.Name + "\nTask ID: " + j.ID
 	} else if domain.IsYouTube(j) && response.AuthMethod == "api-key" {
 		outcome.Status = "fallback"
 		kind = domain.NotificationFallback

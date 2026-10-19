@@ -26,13 +26,13 @@ func (s *Store) History(page, size int) (HistoryPage, error) {
 	}
 	result.Pages = max(1, (result.Total+size-1)/size)
 	result.Page = min(page, result.Pages)
-	rows, err := tx.Query(`SELECT job,slot,status,notification,started,COALESCE(finished,''),job_name,job_revision,timeout_ms,http_status,error_code,duration_ms FROM runs ORDER BY started DESC,rowid DESC LIMIT ? OFFSET ?`, size, (result.Page-1)*size)
+	rows, err := tx.Query(`SELECT job,slot,status,notification,started,COALESCE(finished,''),job_name,job_revision,timeout_ms,http_status,error_code,duration_ms,attempts,fallback_used FROM runs ORDER BY started DESC,rowid DESC LIMIT ? OFFSET ?`, size, (result.Page-1)*size)
 	if err != nil {
 		return result, err
 	}
 	for rows.Next() {
 		var run domain.Run
-		if err = rows.Scan(&run.Job, &run.Slot, &run.Status, &run.Notification, &run.Started, &run.Finished, &run.JobName, &run.JobRevision, &run.TimeoutMS, &run.HTTPStatus, &run.ErrorCode, &run.DurationMS); err != nil {
+		if err = rows.Scan(&run.Job, &run.Slot, &run.Status, &run.Notification, &run.Started, &run.Finished, &run.JobName, &run.JobRevision, &run.TimeoutMS, &run.HTTPStatus, &run.ErrorCode, &run.DurationMS, &run.Attempts, &run.FallbackUsed); err != nil {
 			break
 		}
 		result.Runs = append(result.Runs, run)
@@ -76,6 +76,8 @@ func migrateRunDetails(db *sql.DB) error {
 		{"http_status", "INTEGER NOT NULL DEFAULT 0"},
 		{"error_code", "TEXT NOT NULL DEFAULT ''"},
 		{"duration_ms", "INTEGER NOT NULL DEFAULT -1"},
+		{"attempts", "INTEGER NOT NULL DEFAULT 0"},
+		{"fallback_used", "INTEGER NOT NULL DEFAULT 0"},
 	} {
 		if !columns[column.name] {
 			if _, err = db.Exec("ALTER TABLE runs ADD COLUMN " + column.name + " " + column.definition); err != nil {

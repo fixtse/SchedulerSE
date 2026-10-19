@@ -88,6 +88,20 @@ func ValidateJob(j domain.Job, tz string) error {
 	if j.TimeoutMS != 0 && (j.TimeoutMS < 100 || j.TimeoutMS > 600000) {
 		return errors.New("request timeout must be 100–600000 milliseconds, or blank to use the server default")
 	}
+	if j.RetryCount < 0 || j.RetryCount > 5 {
+		return errors.New("retry count must be between 0 and 5")
+	}
+	if j.RetryDelayMS != 0 && (j.RetryDelayMS < 100 || j.RetryDelayMS > 60000) {
+		return errors.New("retry delay must be 100–60000 milliseconds, or blank for 1000")
+	}
+	if j.FallbackURL != "" {
+		if err := ValidateEndpoint(j.FallbackURL); err != nil {
+			return errors.New("invalid fallback endpoint: " + err.Error())
+		}
+	}
+	if len(j.FallbackAuth) > 8192 || strings.ContainsAny(j.FallbackAuth, "\r\n") {
+		return errors.New("invalid fallback authorization header")
+	}
 	tz = JobTimezone(j, tz)
 	if _, err := time.LoadLocation(tz); err != nil || strings.ContainsAny(tz, " \t\r\n") || tz == "Local" {
 		return errors.New("invalid timezone; choose an IANA timezone")
@@ -116,9 +130,6 @@ func ValidateJob(j domain.Job, tz string) error {
 		want := `"true"`
 		if j.Policy == "youtube-incremental" {
 			want = `"false"`
-			if j.Cron != "" {
-				return errors.New("YouTube incremental sync is manual-only")
-			}
 		}
 		if len(body) != 1 || string(body["fullSync"]) != want {
 			return errors.New("legacy payload must preserve the fullSync string value")

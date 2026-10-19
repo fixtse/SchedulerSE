@@ -7,17 +7,22 @@ import (
 )
 
 type Job struct {
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	URL           string          `json:"url"`
-	Authorization string          `json:"-"`
-	Body          json.RawMessage `json:"body"`
-	Cron          string          `json:"cron"`
-	Timezone      string          `json:"timezone"`
-	TimeoutMS     int             `json:"request_timeout_ms"`
-	Enabled       bool            `json:"enabled"`
-	Policy        string          `json:"policy"`
-	Revision      int64           `json:"revision"`
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	URL            string          `json:"url"`
+	Authorization  string          `json:"-"`
+	Body           json.RawMessage `json:"body"`
+	Cron           string          `json:"cron"`
+	Timezone       string          `json:"timezone"`
+	TimeoutMS      int             `json:"request_timeout_ms"`
+	RetryCount     int             `json:"retry_count"`
+	RetryDelayMS   int             `json:"retry_delay_ms"`
+	RetryUncertain bool            `json:"retry_uncertain"`
+	FallbackURL    string          `json:"fallback_url"`
+	FallbackAuth   string          `json:"-"`
+	Enabled        bool            `json:"enabled"`
+	Policy         string          `json:"policy"`
+	Revision       int64           `json:"revision"`
 }
 
 type Response struct {
@@ -29,6 +34,8 @@ type Outcome struct {
 	Status, Notification, ErrorCode string
 	HTTPStatus                      int
 	DurationMS                      int64
+	Attempts                        int
+	FallbackUsed                    bool
 }
 
 type Run struct {
@@ -36,6 +43,8 @@ type Run struct {
 	JobName, ErrorCode                                 string
 	JobRevision, DurationMS                            int64
 	HTTPStatus, TimeoutMS                              int
+	Attempts                                           int
+	FallbackUsed                                       bool
 }
 type Failure struct {
 	Code   string

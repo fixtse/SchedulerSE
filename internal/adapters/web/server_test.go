@@ -253,16 +253,21 @@ func TestManagementPersistenceSecretsAndConcurrentChanges(t *testing.T) {
 	// Built-in policy comes from storage, never from a submitted form.
 	bad := url.Values{"csrf": {token}, "name": {"Incremental"}, "url": {"https://example.com/sync"}, "body": {`{"fullSync":"false"}`}, "cron": {"* * * * *"}, "revision": {"1"}, "policy": {"generic"}}
 	code, _, _ = f.post(t, "/jobs/youtube-incremental", bad)
-	if code != 400 {
-		t.Fatal("incremental scheduled")
+	if code != 303 {
+		t.Fatal("manual task could not be scheduled")
 	}
+	converted, _ := f.store.Job("youtube-incremental")
+	if converted.Cron != "* * * * *" || converted.Policy != "youtube-incremental" {
+		t.Fatal("schedule or legacy policy changed")
+	}
+	bad.Set("revision", strconv.FormatInt(converted.Revision, 10))
 	bad.Set("cron", "")
 	bad.Set("body", `{"fullSync":false}`)
 	code, _, _ = f.post(t, "/jobs/youtube-incremental", bad)
 	if code != 400 {
 		t.Fatal("payload type changed")
 	}
-	if f.reloads != 4 {
+	if f.reloads != 5 {
 		t.Fatalf("expected reload after each mutation, got %d", f.reloads)
 	}
 }
@@ -410,7 +415,7 @@ func TestScheduleManagementAndManualExecution(t *testing.T) {
 	if code != 409 {
 		t.Fatal("completed manual run replayed")
 	}
-	// The manual-only built-in can also run, preserving its string payload.
+	// A legacy saved task can also run manually, preserving its string payload.
 	incremental, _ := f.store.Job("youtube-incremental")
 	incremental.URL = mock.URL
 	incremental.Enabled = false
