@@ -26,6 +26,8 @@ func TestHistoryPagesAndExpandableDetails(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, body := f.get(t, "/")
+	// Browsers collapse template indentation and line breaks between words.
+	body = strings.Join(strings.Fields(body), " ")
 	for _, fragment := range []string{"Showing 1–25 of 52", "Page 1 of 3", `href="/?page=2#activity"`, `<details class="activity-run">`, "The endpoint returned an unsuccessful HTTP status.", "1.234s", "60000 ms", "HTTP_ERROR", "manual:run-52"} {
 		if code != 200 || !strings.Contains(body, fragment) {
 			t.Fatalf("missing history detail %q: %d", fragment, code)
@@ -35,10 +37,12 @@ func TestHistoryPagesAndExpandableDetails(t *testing.T) {
 		t.Fatal("history leaked a secret, included another page, or rendered unsafe task names")
 	}
 	code, body = f.get(t, "/?page=2")
+	body = strings.Join(strings.Fields(body), " ")
 	if code != 200 || !strings.Contains(body, "Showing 26–50 of 52") || !strings.Contains(body, "manual:run-03") || strings.Contains(body, "manual:run-52") || !strings.Contains(body, `rel="prev"`) {
 		t.Fatal("history did not navigate to the next page")
 	}
 	code, body = f.get(t, "/?page=3")
+	body = strings.Join(strings.Fields(body), " ")
 	if code != 200 || !strings.Contains(body, "Showing 51–52 of 52") || !strings.Contains(body, "manual:run-01") || strings.Contains(body, `rel="next"`) {
 		t.Fatal("last history page is incorrect")
 	}
