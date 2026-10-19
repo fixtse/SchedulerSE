@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Title}} · SchedulerSE</title><link rel="stylesheet" href="/style.css"><script src="/schedule.js" defer></script></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Title}} · SchedulerSE</title><link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48"><link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any"><link rel="stylesheet" href="/style.css"><script src="/schedule.js" defer></script></head>
 <body>
 <header class="top"><a class="brand" href="/"><span class="mark">s</span> SchedulerSE<span class="brand-note">/ control room</span></a>{{if .Username}}<div class="account"><a href="/settings/telegram">Telegram settings</a><span>{{.Username}}</span><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="text-button">Sign out ↗</button></form></div>{{end}}</header>
 {{if or (eq .Page "setup") (eq .Page "login")}}

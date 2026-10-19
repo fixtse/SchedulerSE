@@ -35,6 +35,12 @@ var stylesheet string
 //go:embed schedule.js
 var scheduleJS string
 
+//go:embed favicon.svg
+var faviconSVG []byte
+
+//go:embed favicon.ico
+var faviconICO []byte
+
 var pages = template.Must(template.New("page").Parse(pageHTML))
 
 type Server struct {
@@ -103,7 +109,25 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "same-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+	if r.URL.Path == "/favicon.svg" || r.URL.Path == "/favicon.ico" {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		icon, contentType := faviconSVG, "image/svg+xml"
+		if r.URL.Path == "/favicon.ico" {
+			icon, contentType = faviconICO, "image/x-icon"
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Length", strconv.Itoa(len(icon)))
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		if r.Method == http.MethodGet {
+			_, _ = w.Write(icon)
+		}
+		return
+	}
 	if r.URL.Path == "/health" && r.Method == http.MethodGet {
 		// Health is reachable only over loopback; reverse proxies should not forward it.
 		host, _, _ := net.SplitHostPort(r.RemoteAddr)
