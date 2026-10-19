@@ -3,7 +3,7 @@
 A lightweight, self-hosted HTTP POST scheduler with an authenticated web interface.
 Create tasks, choose their timezones, build schedules, and run tasks manually.
 SQLite stores task settings, credentials, account information, and execution history.
-Requests and Telegram alerts are attempted once, without automatic retries.
+Tasks support optional retries and a fallback endpoint. Telegram alerts are sent once.
 
 Licensed under the [MIT License](LICENSE).
 
@@ -75,8 +75,8 @@ Enable or disable scheduled execution for each task in the web interface. The sc
 runs whenever the service is running; there is no global off switch. Old environment
 settings cannot disable it. Run only one scheduler for a given set of endpoints.
 
-Use **Run now** on any task card or editor to execute its saved configuration once,
-even when scheduled runs for that task are disabled. Save edits first.
+Use **Run now** on any task card or editor to start one execution with its saved
+retry and fallback settings, even when scheduled runs are disabled. Save edits first.
 Runs continue in the background; refresh recent activity to see the result. Duplicate
 form submissions and overlapping runs of the same task are rejected. Running a task
 manually does not enable its schedule.
@@ -109,8 +109,8 @@ validation and alert behavior remain in place.
 Recent activity shows 25 runs per page with **Newer** and **Older** navigation. Click
 any row or its chevron to expand the run details: manual or scheduled trigger, start
 and finish times, total duration, HTTP status, error code, request timeout, saved task
-revision, request attempt count, fallback endpoint use, and Telegram delivery result. The run captures the task name and settings
-at execution time. Response bodies and authorization headers are not saved in history.
+revision, request attempt count, fallback endpoint use, and Telegram delivery result.
+The run captures the task name and settings at execution time. Response bodies and authorization headers are not saved in history.
 
 Older runs remain available after upgrading. Fields that were not collected by older
 releases show **Not recorded**; their duration is estimated from saved timestamps.
@@ -164,9 +164,9 @@ verification and publishing still work for forks and standalone installations.
 **Existing saved tasks survive this update.** Startup does not seed, overwrite, or delete
 tasks. Keep the same `.env`, `TZ`, and state volume to retain schedules, timezones,
 authorization headers, payloads, enabled settings, account, and execution history.
-Compatibility handling retains the validation, alert behavior, credential requirements,
-of tasks saved by older releases. Any manual task can now be given a schedule. These tasks are not
-bundled into new installations. Old service-specific job environment variables are no
+Compatibility handling retains the validation, alert behavior, and credential
+requirements of tasks saved by older releases. Any manual task can now be given a
+schedule. These tasks are not bundled into new installations. Old service-specific job environment variables are no
 longer read; edit existing tasks in the web interface.
 
 `SCHEDULERSE_STATE_VOLUME` selects the persistent Docker volume; its default remains
