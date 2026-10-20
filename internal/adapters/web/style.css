@@ -13,3 +13,5 @@ button:disabled{cursor:not-allowed;opacity:.5}.account{flex-wrap:wrap}@media(max
 
 /* Keep the styled page visible while enhanced navigation is in flight. */
 a.htmx-request{cursor:progress}
+
+.setup-steps{margin:0;padding-left:1.4rem}.setup-steps li+li{margin-top:1.4rem}.setup-steps p{margin:.5rem 0 0}.setup-steps a,.guide-help p a{text-decoration:underline}.guide-reference{white-space:pre-wrap;overflow-wrap:anywhere;max-height:36rem;overflow:auto;font-size:12px;line-height:1.7}

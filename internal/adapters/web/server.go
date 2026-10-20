@@ -74,6 +74,7 @@ type jobView struct {
 	UsesTimezone bool
 }
 type view struct {
+	AgentGuide                           string
 	Remember                             bool
 	AgentTasks                           []domain.AgentTask
 	AgentSettings                        domain.AgentSettings
@@ -245,7 +246,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /settings/agent/skill.zip", s.serveAgentSkill)
 	mux.HandleFunc("GET /settings/agent/guide", func(w http.ResponseWriter, r *http.Request) {
+		render(w, 200, view{Page: "agent-guide", Title: "Agent setup guide", CSRF: csrf, Username: username, AgentGuide: agentGuide})
+	})
+	mux.HandleFunc("GET /settings/agent/guide.md", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="schedulerse-agent-guide.md"`)
 		_, _ = w.Write([]byte(agentGuide))
 	})
 	mux.HandleFunc("GET /agent", func(w http.ResponseWriter, r *http.Request) { s.agentPage(w, r, csrf, username) })

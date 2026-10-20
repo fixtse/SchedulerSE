@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/fixtse/SchedulerSE/internal/domain"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -340,5 +341,54 @@ func TestSkillDownloadCapturesBrowserOrigin(t *testing.T) {
 		if res.Code != 400 {
 			t.Fatalf("accepted invalid download origin %q: %d", origin, res.Code)
 		}
+	}
+}
+
+func TestAgentSetupGuideIsReadableInSettings(t *testing.T) {
+	f := fixture(t)
+	if code, _ := f.get(t, "/settings/agent/guide"); code != 303 {
+		t.Fatal("guide did not require sign-in", code)
+	}
+	if err := f.store.CreateAccount("owner", []byte("unused-test-hash")); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.AddSession(digest("guide-session"), "guide-csrf", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	base, _ := url.Parse(f.server.URL)
+	f.client.Jar.SetCookies(base, []*http.Cookie{{Name: "session", Value: "guide-session", Path: "/"}})
+	response, err := f.client.Get(f.server.URL + "/settings/agent/guide")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != 200 || !strings.HasPrefix(response.Header.Get("Content-Type"), "text/html") || response.Header.Get("Content-Disposition") != "" {
+		t.Fatal("guide was not displayed as an app page", response.StatusCode, response.Header())
+	}
+	if !strings.Contains(string(body), "Connect in three steps") || !strings.Contains(string(body), "guide.md") || !strings.Contains(string(body), "conversation_id") || !strings.Contains(string(body), `href="/settings/agent/skill.zip"`) {
+		t.Fatal("guide omitted setup instructions, download or API reference")
+	}
+	if response.Header.Get("Cache-Control") != "no-store" {
+		t.Fatal("authenticated guide became cacheable")
+	}
+	response, err = f.client.Get(f.server.URL + "/settings/agent/guide.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	markdown, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != 200 || string(markdown) != agentGuide || !strings.HasPrefix(response.Header.Get("Content-Type"), "text/markdown") || !strings.Contains(response.Header.Get("Content-Disposition"), "attachment") {
+		t.Fatal("Markdown reference download failed", response.StatusCode)
+	}
+	code, page := f.get(t, "/settings/agent")
+	if code != 200 || !strings.Contains(page, `class="run-button" href="/settings/agent/guide"`) {
+		t.Fatal("setup guide is not prominently exposed in settings")
 	}
 }
