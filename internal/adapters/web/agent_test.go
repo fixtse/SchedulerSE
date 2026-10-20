@@ -129,7 +129,7 @@ func TestAgentSettingsTokenLifecycleAndCSRF(t *testing.T) {
 	if strings.Contains(page, match[1]) {
 		t.Fatal("token displayed again")
 	}
-	if !strings.Contains(page, "agent setup guide") {
+	if !strings.Contains(page, `id="setup-guide"`) {
 		t.Fatal("missing setup guide")
 	}
 	code, _, _ = f.post(t, "/settings/agent", url.Values{"csrf": {csrfToken}, "webhook_url": {"https://example.com/hook"}, "webhook_authorization": {"Bearer private-callback"}})
@@ -357,7 +357,7 @@ func TestAgentSetupGuideIsReadableInSettings(t *testing.T) {
 	}
 	base, _ := url.Parse(f.server.URL)
 	f.client.Jar.SetCookies(base, []*http.Cookie{{Name: "session", Value: "guide-session", Path: "/"}})
-	response, err := f.client.Get(f.server.URL + "/settings/agent/guide")
+	response, err := f.client.Get(f.server.URL + "/settings/agent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,8 +387,15 @@ func TestAgentSetupGuideIsReadableInSettings(t *testing.T) {
 	if response.StatusCode != 200 || string(markdown) != agentGuide || !strings.HasPrefix(response.Header.Get("Content-Type"), "text/markdown") || !strings.Contains(response.Header.Get("Content-Disposition"), "attachment") {
 		t.Fatal("Markdown reference download failed", response.StatusCode)
 	}
-	code, page := f.get(t, "/settings/agent")
-	if code != 200 || !strings.Contains(page, `class="run-button" href="/settings/agent/guide"`) {
-		t.Fatal("setup guide is not prominently exposed in settings")
+	if !strings.Contains(string(body), `id="setup-guide"`) || !strings.Contains(string(body), `id="agent-token"`) || !strings.Contains(string(body), `action="/settings/agent/token"`) || !strings.Contains(string(body), `action="/settings/agent"`) {
+		t.Fatal("merged guide omitted token or delivery controls")
+	}
+	response, err = f.client.Get(f.server.URL + "/settings/agent/guide")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != 303 || response.Header.Get("Location") != "/settings/agent#setup-guide" {
+		t.Fatal("old guide URL did not redirect to merged settings page", response.StatusCode, response.Header)
 	}
 }

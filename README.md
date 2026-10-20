@@ -121,8 +121,8 @@ Open **Agent API settings** after signing in:
 
 1. Generate an API token in settings. It is shown once; only its SHA-256 hash is saved.
 2. Click **Download agent skill** and install the extracted `schedulerse-agent` folder.
-   **Open agent setup guide** beside the download shows the full setup instructions
-   inside the app, with a Markdown reference download for custom integrations.
+   Setup instructions, token controls, delivery settings and the API reference are
+   all on the same Agent API settings page, with a Markdown reference download.
    The download includes the address used in your browser, including HTTP/HTTPS,
    hostname or IP address, and port. Give your agent only the API token privately
    and ask it to connect. The agent configures polling or a webhook through the API;

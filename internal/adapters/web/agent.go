@@ -207,7 +207,7 @@ func (s *Server) renderAgentSettings(w http.ResponseWriter, status int, csrf, us
 	}
 	hasToken, hasAuth := settings.TokenHash != "", settings.WebhookAuth != ""
 	settings.TokenHash, settings.WebhookAuth = "", ""
-	render(w, status, view{Page: "agent-settings", Title: "Agent API settings", CSRF: csrf, Username: user, AgentSettings: settings, HasAgentToken: hasToken, HasWebhookAuth: hasAuth, NewAgentToken: token, Notice: notice, Error: message})
+	render(w, status, view{Page: "agent-settings", AgentGuide: agentGuide, Title: "Agent API settings", CSRF: csrf, Username: user, AgentSettings: settings, HasAgentToken: hasToken, HasWebhookAuth: hasAuth, NewAgentToken: token, Notice: notice, Error: message})
 }
 func (s *Server) saveAgentSettings(w http.ResponseWriter, r *http.Request, csrf, user string) {
 	settings, err := s.Store.AgentSettings()
