@@ -87,6 +87,10 @@ func OpenStore(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err = migratePasswordResets(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return s, nil
 }
 func (s *Store) Seed(jobs []domain.Job) error {
@@ -207,6 +211,15 @@ func (s *Store) CreateAccount(user string, hash []byte) error {
 	return err
 }
 func (s *Store) AddSession(token, csrf string, expires time.Time) error {
+	return s.addSession(token, csrf, expires, nil)
+}
+
+// Recheck the verified password at insertion so a login already in flight cannot
+// create a new session with the old password after a concurrent recovery.
+func (s *Store) AddSessionForPassword(token, csrf string, expires time.Time, password []byte) error {
+	return s.addSession(token, csrf, expires, &password)
+}
+func (s *Store) addSession(token, csrf string, expires time.Time, password *[]byte) error {
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return err
@@ -219,8 +232,22 @@ func (s *Store) AddSession(token, csrf string, expires time.Time) error {
 	if _, err = tx.Exec("DELETE FROM sessions WHERE token IN (SELECT token FROM sessions ORDER BY expires DESC LIMIT -1 OFFSET 19)"); err != nil {
 		return err
 	}
-	if _, err = tx.Exec("INSERT INTO sessions(token,csrf,expires) VALUES(?,?,?)", token, csrf, expires.Unix()); err != nil {
-		return err
+	if password == nil {
+		if _, err = tx.Exec("INSERT INTO sessions(token,csrf,expires) VALUES(?,?,?)", token, csrf, expires.Unix()); err != nil {
+			return err
+		}
+	} else {
+		result, err := tx.Exec("INSERT INTO sessions(token,csrf,expires) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM account WHERE id=1 AND password=?)", token, csrf, expires.Unix(), *password)
+		if err != nil {
+			return err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return ErrConflict
+		}
 	}
 	return tx.Commit()
 }

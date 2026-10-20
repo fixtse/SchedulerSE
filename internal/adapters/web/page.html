@@ -20,7 +20,7 @@
             <form hx-boost="false" method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button
                     class="text-button">Sign out ↗</button></form>
         </div>{{end}}</header>
-    {{if or (eq .Page "setup") (eq .Page "login")}}
+    {{if or (eq .Page "setup") (eq .Page "login") (eq .Page "forgot-password") (eq .Page "reset-password")}}
     <main class="auth-layout">
         <section class="auth-intro">
             <p class="eyebrow">SMALL SERVICE. EVERYTHING IN ORDER.</p>
@@ -31,9 +31,19 @@
         <section class="auth-card">
             <p class="eyebrow">{{if eq .Page "setup"}}01 / FIRST-TIME SETUP{{else}}WELCOME BACK{{end}}</p>
             <h2>{{.Title}}</h2>
-            <p class="muted">{{if eq .Page "setup"}}Create the administrator account for this installation.{{else}}Sign
-                in to manage your automations.{{end}}</p>
+            <p class="muted">{{if eq .Page "setup"}}Create the administrator account for this installation.{{else if eq .Page "forgot-password"}}Request a reset token in your configured Telegram chat.{{else if eq .Page "reset-password"}}Paste the token from Telegram and choose a new password.{{else}}Sign in to manage your automations.{{end}}</p>
             {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+            {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
+            {{if eq .Page "forgot-password"}}
+            <form hx-boost="false" method="post" action="/forgot-password" class="stack"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="primary">Send reset token to Telegram →</button></form>
+            <p><a href="/reset-password">Use a reset token →</a></p><p class="fine">Tokens expire after 10 minutes. Recovery needs an existing bot token and chat saved in Telegram settings.</p><p><a href="/login">← Back to sign in</a></p>
+            {{else if eq .Page "reset-password"}}
+            <form hx-boost="false" method="post" action="/reset-password" class="stack"><input type="hidden" name="csrf" value="{{.CSRF}}">
+            <label>Reset token<input name="reset_token" type="password" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" required maxlength="128"></label>
+            <label>New password<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="72" required></label>
+            <label>Confirm new password<input name="confirm_password" type="password" autocomplete="new-password" minlength="12" maxlength="72" required></label>
+            <button class="primary">Reset password →</button></form><p class="fine">Use 12–72 bytes. Resetting signs out all existing web sessions.</p><p><a href="/forgot-password">Request another token</a> · <a href="/login">Back to sign in</a></p>
+            {{else}}
             <form hx-boost="false" method="post" action="/{{.Page}}" class="stack"><input type="hidden" name="csrf" value="{{.CSRF}}">
                 {{if eq .Page "setup"}}<label>Setup token<input name="setup_token" type="password" required
                         autocomplete="off"><small>Retrieve it from your
@@ -46,11 +56,13 @@
                         password.</small>{{end}}</label>
                 {{if eq .Page "setup"}}<label>Confirm password<input name="confirm_password" type="password" required
                         minlength="12" maxlength="72" autocomplete="new-password"></label>{{end}}
+                {{if eq .Page "login"}}<label class="check"><input type="checkbox" name="remember" {{if .Remember}}checked{{end}}>Stay signed in for 30 days</label>{{end}}
                 <button class="primary">{{if eq .Page "setup"}}Create account{{else}}Sign in{{end}}
                     <span>→</span></button>
             </form>
-            <p class="fine">{{if eq .Page "setup"}}One administrator. No default credentials.{{else}}Your session
-                expires after 12 hours.{{end}}</p>
+            {{if eq .Page "login"}}<p><a href="/forgot-password">Forgot password?</a></p>{{end}}
+            <p class="fine">{{if eq .Page "setup"}}One administrator. No default credentials.{{else}}12-hour sessions, or stay signed in for 30 days.{{end}}</p>
+            {{end}}
         </section>
     </main>
     {{else}}
@@ -198,7 +210,7 @@
             <form hx-boost="false" method="post" action="/settings/telegram" class="panel stack">
                 <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision"
                     value="{{.Telegram.Revision}}">
-                <h2>Connection</h2>
+                <h2>Connection</h2><p class="muted">This chat also receives password-reset tokens, even when routine notifications are disabled. Use a chat whose members you trust with account recovery.</p>
                 <label>Bot token<input name="bot_token" type="password" autocomplete="new-password" maxlength="256"
                         placeholder="{{if .HasBotToken}}Saved token · leave blank to keep{{else}}123456789:…{{end}}"><small>Create
                         a bot with @BotFather in Telegram and paste its token here. Saved tokens are never

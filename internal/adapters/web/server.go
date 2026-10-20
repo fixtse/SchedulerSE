@@ -74,6 +74,7 @@ type jobView struct {
 	UsesTimezone bool
 }
 type view struct {
+	Remember                             bool
 	AgentTasks                           []domain.AgentTask
 	AgentSettings                        domain.AgentSettings
 	HasAgentToken, HasWebhookAuth        bool
@@ -220,6 +221,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login")
 		return
 	}
+	if r.URL.Path == "/forgot-password" || r.URL.Path == "/reset-password" {
+		s.passwordRecovery(w, r, strings.TrimPrefix(r.URL.Path, "/"), hash)
+		return
+	}
 	if r.URL.Path == "/login" {
 		s.authPage(w, r, "login", username, hash)
 		return
@@ -316,7 +321,10 @@ func (s *Server) authPage(w http.ResponseWriter, r *http.Request, kind, user str
 		return
 	}
 	csrf := s.preauth(w, r)
-	v := view{Page: kind, Title: "Sign in", CSRF: csrf}
+	v := view{Page: kind, Title: "Sign in", CSRF: csrf, Remember: r.PostFormValue("remember") == "on"}
+	if kind == "login" && r.URL.Query().Get("reset") == "complete" {
+		v.Notice = "Password reset complete. Sign in with your new password."
+	}
 	if kind == "setup" {
 		v.Title = "Make this space yours"
 	}
@@ -363,6 +371,7 @@ func (s *Server) authPage(w http.ResponseWriter, r *http.Request, kind, user str
 			http.Error(w, "Account setup is already complete or unavailable", 409)
 			return
 		}
+		hash = encoded
 		_ = os.Remove(filepath.Join(s.Config.DataDir, "setup-token"))
 	} else {
 		// Always check the hash, including an incorrect username.
@@ -374,11 +383,19 @@ func (s *Server) authPage(w http.ResponseWriter, r *http.Request, kind, user str
 		}
 	}
 	token, newCSRF := rand.Text(), rand.Text()
-	if err := s.Store.AddSession(digest(token), newCSRF, time.Now().Add(12*time.Hour)); err != nil {
+	lifetime := 12 * time.Hour
+	if kind == "login" && v.Remember {
+		lifetime = 30 * 24 * time.Hour
+	}
+	if err := s.Store.AddSessionForPassword(digest(token), newCSRF, time.Now().Add(lifetime), hash); err != nil {
+		if errors.Is(err, adapters.ErrConflict) {
+			http.Error(w, "Account credentials changed; sign in again", 409)
+			return
+		}
 		http.Error(w, "Could not create session; sign in again", 503)
 		return
 	}
-	s.cookie(w, "session", token, 12*60*60)
+	s.cookie(w, "session", token, int(lifetime/time.Second))
 	s.cookie(w, "preauth", "", -1)
 	redirect(w, r, "/")
 }

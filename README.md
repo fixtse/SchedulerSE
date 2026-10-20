@@ -58,6 +58,29 @@ from the server (default: 120000 ms). The saved timeout applies to scheduled and
 manual requests, including response-body reads. Existing tasks inherit the server
 default until an override is saved. Telegram delivery keeps its separate timeout.
 
+## Sign-in and password recovery
+
+Choose **Stay signed in for 30 days** on the login form to keep a trusted browser
+connected. Unchecked logins retain the 12-hour session. Signing out invalidates that
+browser's session; a password reset invalidates all web sessions, including remembered
+sessions. Session cookies remain HttpOnly and use the configured HTTPS security setting.
+
+If you forget your password, select **Forgot password?** on the login page, then
+**Send reset token to Telegram**. Open the chat already saved in Telegram settings,
+copy the token, and select **Use a reset token**. Enter it with a new password twice
+(12–72 bytes), then sign in normally. Tokens expire after 10 minutes, are stored only
+as hashes, and can be used once. Resetting invalidates all outstanding reset tokens
+and web sessions. Changing Telegram settings also invalidates previously issued tokens.
+Tokens are pasted into the form, never included in reset URLs.
+
+Recovery uses the saved bot/chat even if routine Telegram notifications are disabled
+or all notification types are unchecked. Anyone with access to that chat can use a
+reset token, so select a trusted recovery destination. No new bot/chat details can be
+supplied from the recovery page. Requests are limited to one per minute and five per
+hour, persisted across restarts. Messages are attempted once; a token may still work
+if Telegram accepted it but delivery confirmation failed. Without saved working
+Telegram credentials, this flow cannot recover the account.
+
 ## Web navigation
 
 Page links use a locally bundled copy of HTMX 2.0.11 to replace page content while
