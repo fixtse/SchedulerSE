@@ -6,19 +6,42 @@ the default Compose service is reachable as `http://schedulerse:8789`. From the
 host, use the published service URL. HTTP is for trusted local networks; use HTTPS
 otherwise. Generate the token in Settings → Agent API. Keep it in a private secret
 store, never in messages, URLs, schedule context or logs. It only manages agent
-schedules; browser settings and automation jobs are outside its scope.
+schedules and their delivery connection; account/Telegram settings, token management
+and automation jobs are outside its scope.
 
 ## Install the portable skill
 
 Download `/api/agent/v1/skill.zip` with the same bearer token (or **Download agent
 skill** in settings) and install `schedulerse-agent` in your agent's skill directory.
-Ask it to connect using **Local agent (polling)**. Fresh installs default to polling;
-existing webhook installations keep their previous mode until changed in settings.
+The downloaded skill includes `connection.json` with this browser's service origin
+(scheme, host/IP and port). Install it and supply only the token privately. The
+agent can read/configure polling or webhooks through GET/PUT `/connection`; users
+do not need to copy URLs or manually select delivery settings.
 The included Python bridge makes outbound API requests: it needs no callback URL,
 listening port, tunnel, T3 Connect or Cloudflare account. Keep the bridge running
 and persist its state. The agent executable and credentials must exist in the
 bridge's host/container. The skill also documents optional native T3 webhooks and
 Cloudflare for remote integrations; Markdown alone cannot wake a stopped agent.
+
+## Configure delivery automatically
+
+GET `/connection` returns `delivery_mode`, `webhook_url` and
+`has_webhook_authorization`. Stored authorization values are never returned.
+PUT `/connection` accepts `delivery_mode` (`poll` or `webhook`), optional
+`webhook_url`, and optional `webhook_authorization`. Omitted webhook fields preserve
+saved values; an empty authorization clears it. Success returns the same redacted
+connection view. Polling needs no webhook URL. Webhook mode requires a valid URL
+(HTTPS outside loopback). Both routes require the same bearer token and no browser
+session. They cannot change unrelated settings or generate/revoke API tokens.
+
+```json
+{"delivery_mode":"poll"}
+```
+
+For a webhook, send the actual receiver URL and its full authorization value. This
+is a shared installation-wide connection: preserve an existing working destination
+unless the user's request authorizes replacing it. Callback failures and delivery
+mode changes retain their documented scheduling behavior.
 
 ## Schedule
 
@@ -75,7 +98,7 @@ or is invalid. 409 during creation can also mean the webhook is not configured.
 
 GET `/inbox?conversation_id=<routing-label>` returns up to 10 due pending event
 objects, ordered by due time. Reading does not consume them. This endpoint requires
-polling delivery mode (409 otherwise); mode changes require the authenticated UI.
+polling delivery mode (409 otherwise); mode changes can be made through PUT `/connection` or the authenticated UI.
 Save each event durably to a private local inbox before acknowledging it:
 
 ```http
@@ -106,7 +129,7 @@ filtering is routing convenience, not an authorization boundary.
 
 Select **Webhook** in settings to configure a callback destination and optional
 full Authorization header. Without a configured URL, webhook-mode creation returns
-409 and pending callbacks pause. The API cannot change settings or credentials.
+409 and pending callbacks pause. The token can configure this connection through PUT `/connection`.
 Use a separate webhook secret; a native T3 receiver can instead use its generated
 secret URL with a blank Authorization header. Keep that URL private.
 

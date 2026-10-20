@@ -3,6 +3,8 @@ package skills
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 )
@@ -35,5 +37,44 @@ func TestAgentArchiveIsSelfContainedAndExcludesRuntimeSecrets(t *testing.T) {
 		if !found {
 			t.Error("missing runtime resource", name)
 		}
+	}
+}
+
+func TestPersonalizedSkillIncludesOriginWithoutCredentials(t *testing.T) {
+	origin := "https://192.0.2.5:9443"
+	data, err := AgentArchiveForOrigin(origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundMetadata, foundInstructions := false, false
+	for _, file := range archive.File {
+		if file.Name != "schedulerse-agent/connection.json" && file.Name != "schedulerse-agent/SKILL.md" {
+			continue
+		}
+		reader, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if file.Name == "schedulerse-agent/connection.json" {
+			var metadata map[string]string
+			if json.Unmarshal(body, &metadata) != nil || metadata["service_url"] != origin || metadata["api_base"] != origin+"/api/agent/v1" || len(metadata) != 2 {
+				t.Fatal("incorrect connection metadata", string(body))
+			}
+			foundMetadata = true
+		} else {
+			foundInstructions = strings.Contains(string(body), "Service URL: `"+origin+"`")
+		}
+	}
+	if !foundMetadata || !foundInstructions {
+		t.Fatal("personalized connection instructions missing")
 	}
 }

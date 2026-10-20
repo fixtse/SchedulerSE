@@ -3,8 +3,8 @@
 This is the default. The agent bridge makes outbound authenticated requests to
 SchedulerSE, stores each due event locally, and claims pickup before invoking the
 agent. No webhook receiver, callback URL, tunnel, public hosting or Cloudflare
-account is required. Select **Local agent (polling)** in Agent API settings. Fresh
-installations default to polling; existing webhook connections are preserved.
+account is required. The initializer uses the API token to configure polling
+automatically; the user does not need to select a delivery method in settings.
 
 ## Address the service from where the bridge runs
 
@@ -32,19 +32,25 @@ inside the SchedulerSE container.
 
 Store the SchedulerSE API token in a private file using the available secret store
 or private credential UI. Never send it in chat or include it in command arguments.
-Then run, substituting the actual reachable URL, paths and routing label:
+Read `connection.json` from the installed skill for the service URL. The download
+captures the browser address automatically, including HTTP/HTTPS and any port.
+The initializer uses it by default and calls PUT `/connection` to select polling.
+The agent chooses the paths and routing label from its own runtime/session:
+
 
 ```sh
 python3 /installed/skill/scripts/bridge.py init-local \
   --state /private/schedulerse-connection \
-  --scheduler-url http://schedulerse:8789 \
   --token-file /private/scheduler-api-token \
   --workdir /agent/workspace \
   --conversation-id reminders-for-project
 ```
 
-The service-name URL above is for a bridge on the **same Docker network**. From
-the host, substitute the existing published URL. Omitting `--token-file` prompts
+Only use `--scheduler-url` to override a packaged address that is unreachable from
+the agent's namespace, for example a known `http://schedulerse:8789` on its shared
+Docker network. This is an agent setup detail, not another required user input.
+A source-only skill copy without `connection.json` needs an explicit URL once.
+Omitting `--token-file` prompts
 for the token without echo when running interactively. The helper creates private
 configuration with a stable random `consumer_id`. Preserve it with the SQLite
 receipts across restarts; it resolves lost pickup responses without duplicating work.
@@ -85,7 +91,8 @@ execution. A local receipt becomes executable only after successful acknowledgem
 If the response is lost, the receipt remains awaiting and retries even when the task
 no longer appears in the inbox. Cancellation or a conflicting consumer also returns
 409 and skips the local invocation. These APIs require the same scoped agent token;
-settings still require the authenticated browser UI.
+the token also configures delivery through GET/PUT `/connection`. Account and
+unrelated application settings still require the authenticated browser UI.
 
 Pending events wait while the bridge is stopped. A successful pickup marks a one-shot
 item delivered or advances a recurring item, skipping missed slots. This records

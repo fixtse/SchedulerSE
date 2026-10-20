@@ -85,12 +85,12 @@ manually does not enable its schedule.
 
 Open **Agent API settings** after signing in:
 
-1. Select **Local agent (polling)** and generate an API token. Fresh installations
-   use polling by default; existing webhook connections retain webhook mode until
-   changed. The token is shown once; only its SHA-256 hash is saved.
-2. Click **Download agent skill**, install the extracted `schedulerse-agent` folder
-   in your agent, and ask it to connect to this installation. Provide the reachable
-   installation URL and API token privately.
+1. Generate an API token in settings. It is shown once; only its SHA-256 hash is saved.
+2. Click **Download agent skill** and install the extracted `schedulerse-agent` folder.
+   The download includes the address used in your browser, including HTTP/HTTPS,
+   hostname or IP address, and port. Give your agent only the API token privately
+   and ask it to connect. The agent configures polling or a webhook through the API;
+   no copying URLs or choosing delivery settings is required.
 3. Keep the skill's Python bridge running beside your agent using a process supervisor.
    It picks up due reminders, stores receipts durably and invokes Codex or the chosen
    agent adapter. No AI request is made when the inbox is empty.
@@ -107,12 +107,13 @@ Standalone Codex turns write their output locally or resume an explicit CLI sess
 they do not automatically appear in T3 Code's UI. For reminders in a T3 thread, use
 its native webhook integration when reachable. **Webhook** delivery and the optional
 Cloudflare inbox remain available for remote integrations; the skill does not
-provision them for a local setup. Webhook URLs and credentials are set in the browser
-settings, separately from the agent API token.
+provision them for a local setup. The token can configure webhook URLs and credentials
+through GET/PUT `/api/agent/v1/connection`; browser settings remain available for
+manual control. The connection API never returns a stored authorization header.
 
 The bearer-authenticated JSON API at `/api/agent/v1` can create, list, inspect and
-cancel agent schedules. Tokens have access only to agent schedules, with no access
-to automation jobs, account settings or webhook credentials. There is one shared
+cancel agent schedules and configure their delivery connection. Tokens cannot manage
+automation jobs, account settings, Telegram or API token generation/revocation. There is one shared
 agent token and delivery mode per installation; use this with trusted agents.
 The **Agent schedules** tab keeps these items separate from **Your automations**
 and its execution history. It shows status, UTC due time, recurrence, callback
@@ -267,6 +268,12 @@ requires updating Compose's `environment` and container port mapping together.
 When running the binary directly, `LISTEN_ADDR` can select an address such as
 `127.0.0.1:8789`; if unset, it defaults to `:8789` (or the legacy `HEALTH_PORT` value).
 The healthcheck command uses the same listener port.
+
+The browser supplies its origin when downloading a skill; the server checks that
+the host matches the request. Forwarded headers are not trusted for URL generation.
+Without browser origin metadata, the server uses a same-host Referer or the request
+scheme (`COOKIE_SECURE=true` supplies HTTPS behind a proxy). Re-download the skill
+from the new address if you move the service. URL metadata contains no API token.
 
 For HTTPS through a reverse proxy, set `COOKIE_SECURE=true`, preserve the original
 `Host` header, and exclude `/health` from proxying. Setup and login are rate limited;

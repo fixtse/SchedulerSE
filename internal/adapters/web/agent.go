@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +22,8 @@ import (
 
 //go:embed agent-guide.md
 var agentGuide string
+
+var agentHostname = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 var agentID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
@@ -31,7 +36,8 @@ func agentError(w http.ResponseWriter, status int, message string) {
 	agentJSON(w, status, map[string]string{"error": message})
 }
 
-// Bearer tokens are scoped to agent schedules. Browser sessions do not authorize this API.
+// Bearer tokens manage agent schedules and delivery, not unrelated application settings.
+// Browser sessions do not authorize this API.
 func (s *Server) agentAPI(w http.ResponseWriter, r *http.Request) {
 	settings, err := s.Store.AgentSettings()
 	if err != nil {
@@ -47,7 +53,9 @@ func (s *Server) agentAPI(w http.ResponseWriter, r *http.Request) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/agent/v1/inbox", s.agentInbox)
 	mux.HandleFunc("POST /api/agent/v1/inbox/{id}/ack", s.agentPickup)
-	mux.HandleFunc("GET /api/agent/v1/skill.zip", serveAgentSkill)
+	mux.HandleFunc("GET /api/agent/v1/connection", s.agentConnection)
+	mux.HandleFunc("PUT /api/agent/v1/connection", s.agentConnection)
+	mux.HandleFunc("GET /api/agent/v1/skill.zip", s.serveAgentSkill)
 	mux.HandleFunc("GET /api/agent/v1/guide", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		_, _ = io.WriteString(w, agentGuide)
@@ -259,8 +267,13 @@ func (s *Server) agentToken(w http.ResponseWriter, r *http.Request, csrf, user s
 	s.renderAgentSettings(w, 200, csrf, user, token, notice, "")
 }
 
-func serveAgentSkill(w http.ResponseWriter, r *http.Request) {
-	data, err := skills.AgentArchive()
+func (s *Server) serveAgentSkill(w http.ResponseWriter, r *http.Request) {
+	origin, err := s.agentSkillOrigin(r)
+	if err != nil {
+		http.Error(w, "Invalid service origin", 400)
+		return
+	}
+	data, err := skills.AgentArchiveForOrigin(origin)
 	if err != nil {
 		http.Error(w, "Could not prepare skill download", 503)
 		return
@@ -318,4 +331,93 @@ func (s *Server) agentPickup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+
+// Browser downloads provide location.origin explicitly, preserving the externally
+// visible HTTPS scheme through reverse proxies without trusting forwarded headers.
+func (s *Server) agentSkillOrigin(r *http.Request) (string, error) {
+	scheme := "http"
+	if r.TLS != nil || s.Config.CookieSecure {
+		scheme = "https"
+	}
+	if referer, err := url.Parse(r.Referer()); err == nil && strings.EqualFold(referer.Host, r.Host) && (referer.Scheme == "http" || referer.Scheme == "https") {
+		scheme = referer.Scheme
+	}
+	origin := r.URL.Query().Get("origin")
+	if origin == "" {
+		origin = scheme + "://" + r.Host
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Opaque != "" || u.User != nil || u.Host == "" || !strings.EqualFold(u.Host, r.Host) || (u.Scheme != "http" && u.Scheme != "https") || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return "", errors.New("invalid origin")
+	}
+	if net.ParseIP(u.Hostname()) == nil && !agentHostname.MatchString(u.Hostname()) {
+		return "", errors.New("invalid host")
+	}
+	if port := u.Port(); port != "" {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			return "", errors.New("invalid port")
+		}
+	}
+	if strings.HasSuffix(u.Host, ":") {
+		return "", errors.New("invalid port")
+	}
+	return u.Scheme + "://" + u.Host, nil
+}
+
+func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
+	settings, err := s.Store.AgentSettings()
+	if err != nil {
+		agentError(w, 503, "Agent settings unavailable")
+		return
+	}
+	if r.Method == http.MethodPut {
+		if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" {
+			agentError(w, 415, "Use Content-Type: application/json")
+			return
+		}
+		var input struct {
+			DeliveryMode string  `json:"delivery_mode"`
+			WebhookURL   *string `json:"webhook_url"`
+			WebhookAuth  *string `json:"webhook_authorization"`
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF || (input.DeliveryMode != "poll" && input.DeliveryMode != "webhook") {
+			agentError(w, 400, "Provide delivery_mode poll or webhook, and optional webhook_url and webhook_authorization")
+			return
+		}
+		settings.DeliveryMode = input.DeliveryMode
+		if input.WebhookURL != nil {
+			settings.WebhookURL = strings.TrimSpace(*input.WebhookURL)
+		}
+		if input.WebhookAuth != nil {
+			settings.WebhookAuth = *input.WebhookAuth
+		}
+		if len(settings.WebhookURL) > 2048 || len(settings.WebhookAuth) > 8192 || strings.ContainsAny(settings.WebhookAuth, "\r\n") {
+			agentError(w, 400, "Webhook URL or authorization header is invalid or too long")
+			return
+		}
+		if settings.WebhookURL != "" {
+			if err = adapters.ValidateEndpoint(settings.WebhookURL); err != nil {
+				agentError(w, 400, err.Error())
+				return
+			}
+		}
+		if settings.DeliveryMode == "webhook" && settings.WebhookURL == "" {
+			agentError(w, 400, "Webhook delivery requires a webhook_url")
+			return
+		}
+		if err = s.Store.SaveAgentConnection(settings.DeliveryMode, settings.WebhookURL, settings.WebhookAuth); err != nil {
+			agentError(w, 503, "Could not save agent connection")
+			return
+		}
+	}
+	agentJSON(w, 200, struct {
+		DeliveryMode   string `json:"delivery_mode"`
+		WebhookURL     string `json:"webhook_url"`
+		HasWebhookAuth bool   `json:"has_webhook_authorization"`
+	}{settings.DeliveryMode, settings.WebhookURL, settings.WebhookAuth != ""})
 }

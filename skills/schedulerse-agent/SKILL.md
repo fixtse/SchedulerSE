@@ -13,15 +13,21 @@ connection complete until an end-to-end reminder reaches the intended destinatio
 
 ## Connect once
 
-1. Obtain the SchedulerSE installation URL and API token through a secret store or
-   the application's private credential UI. The user generates the token in
-   **Agent API settings**. Do not request secrets in ordinary chat or store them in
-   schedules. Read the installation's authenticated `/api/agent/v1/guide` for the
-   precise API contract before creating tasks.
+1. Read the adjacent `connection.json` included by the service download. Its
+   `service_url` contains the browser's scheme, host/IP and port; use this address
+   without asking the user to enter it. Obtain only the API token privately through
+   a secret store or credential UI. If this is a source-only copy with no metadata,
+   obtain the installation URL once. Never put the token in chat, schedules or logs.
+   Read authenticated `/api/agent/v1/guide` and GET `/api/agent/v1/connection`.
+   Check reachability from the agent's environment. Use an existing trusted Docker
+   service address when the browser address is unreachable from that container;
+   do not scan hosts or send the token to guessed destinations.
 2. **Default: local agent polling.** Follow [references/local.md](references/local.md).
-   Select **Local agent (polling)** in settings, initialize the bridge with the URL
-   reachable from its own host/container, and supervise it as a persistent process.
-   Existing webhook installations retain webhook mode until explicitly changed.
+   Initialize the bridge with its bundled service address and supplied token; it
+   selects polling automatically through PUT `/api/agent/v1/connection`. Supervise
+   it as a persistent process. If GET shows an existing working webhook for another
+   workflow, preserve it unless the user's request authorizes switching the shared
+   installation's delivery mode.
 3. **Optional native T3 delivery:** when the user wants reminders in a T3 thread and
    the host exposes an actual reachable webhook, use [references/t3.md](references/t3.md).
    Local Codex CLI execution does not put messages into T3's UI. If no local T3
@@ -48,7 +54,9 @@ for elapsed timers. Set `context` to the intended routing references. Calendar c
 belongs in the service's automations view; `interval_seconds` is elapsed recurrence.
 Confirm the saved due time and destination. Cancellation uses DELETE on the task ID.
 
-A token controls this installation's shared agent schedules, not just one conversation.
+A token controls this installation's shared agent schedules and delivery connection,
+not just one conversation. It can configure polling/webhooks but cannot manage the
+account, Telegram settings, API tokens or ordinary automations.
 Only inspect or cancel schedules relevant to the user's request. No API token or
 receiver credential belongs in `context` or a callback body.
 

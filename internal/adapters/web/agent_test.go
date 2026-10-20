@@ -1,6 +1,8 @@
 package web
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -231,5 +233,112 @@ func TestLocalAgentInboxWorksWithoutWebhook(t *testing.T) {
 	}
 	if res = agentRequest(f, "POST", "/api/agent/v1/inbox/local-reminder/ack", "local-api-token", ack); res.Code != 204 {
 		t.Fatal("pickup retry lost after switching mode", res.Code)
+	}
+}
+
+func TestAgentTokenCanConfigureDeliveryWithoutBrowserSession(t *testing.T) {
+	f := fixture(t)
+	if err := f.store.SetAgentToken(digest("setup-api-token")); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/agent/v1/connection"
+	if res := agentRequest(f, "PUT", path, "", `{"delivery_mode":"poll"}`); res.Code != 401 {
+		t.Fatal("unauthenticated delivery setup accepted")
+	}
+	input := `{"delivery_mode":"webhook","webhook_url":"https://agent.example.com/callback","webhook_authorization":"Bearer callback-private-secret"}`
+	res := agentRequest(f, "PUT", path, "setup-api-token", input)
+	if res.Code != 200 || strings.Contains(res.Body.String(), "callback-private-secret") || !strings.Contains(res.Body.String(), `"has_webhook_authorization":true`) {
+		t.Fatal("configuration failed or exposed authorization", res.Code, res.Body.String())
+	}
+	res = agentRequest(f, "GET", path, "setup-api-token", "")
+	if res.Code != 200 || strings.Contains(res.Body.String(), "callback-private-secret") || !strings.Contains(res.Body.String(), "agent.example.com") {
+		t.Fatal("configuration discovery failed", res.Code, res.Body.String())
+	}
+	if res = agentRequest(f, "PUT", path, "setup-api-token", `{"delivery_mode":"poll"}`); res.Code != 200 {
+		t.Fatal("automatic polling configuration failed", res.Code)
+	}
+	saved, err := f.store.AgentSettings()
+	if err != nil || saved.DeliveryMode != "poll" || saved.WebhookAuth != "Bearer callback-private-secret" {
+		t.Fatalf("omitted credentials were not preserved: %+v %v", saved, err)
+	}
+	for _, body := range []string{
+		`{"delivery_mode":"invalid"}`,
+		`{"delivery_mode":"webhook","webhook_url":"http://public.example.com/hook"}`,
+		`{"delivery_mode":"webhook","webhook_url":""}`,
+		`{"delivery_mode":"poll","telegram_token":"outside-scope"}`,
+		`{"delivery_mode":"poll","webhook_authorization":"Bearer invalid\r\nheader"}`,
+	} {
+		if res = agentRequest(f, "PUT", path, "setup-api-token", body); res.Code != 400 {
+			t.Fatalf("accepted invalid setup: %d %s", res.Code, body)
+		}
+	}
+	if res = agentRequest(f, "PUT", path, "setup-api-token", `{"delivery_mode":"poll","webhook_authorization":""}`); res.Code != 200 {
+		t.Fatal("explicit credential removal failed")
+	}
+	saved, err = f.store.AgentSettings()
+	if err != nil || saved.WebhookAuth != "" {
+		t.Fatal("credential removal not saved", err)
+	}
+}
+
+func TestSkillDownloadCapturesBrowserOrigin(t *testing.T) {
+	f := fixture(t)
+	if err := f.store.SetAgentToken(digest("origin-api-token")); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, host, origin, referer, forwarded, want string
+		secure                                       bool
+	}{
+		{name: "HTTP IP and port", host: "192.0.2.10:8789", want: "http://192.0.2.10:8789"},
+		{name: "HTTPS browser behind proxy", host: "scheduler.example.com:9443", origin: "https://scheduler.example.com:9443", want: "https://scheduler.example.com:9443"},
+		{name: "same host referer", host: "scheduler.example.com", referer: "https://scheduler.example.com/settings/agent", want: "https://scheduler.example.com"},
+		{name: "secure proxy fallback", host: "scheduler.example.com", secure: true, want: "https://scheduler.example.com"},
+		{name: "ignore forwarded origin", host: "schedulerse:8789", forwarded: "https", want: "http://schedulerse:8789"},
+		{name: "IPv6 and port", host: "[2001:db8::1]:8789", origin: "http://[2001:db8::1]:8789", want: "http://[2001:db8::1]:8789"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f.app.Config.CookieSecure = tc.secure
+			req := httptest.NewRequest("GET", "/api/agent/v1/skill.zip?origin="+url.QueryEscape(tc.origin), nil)
+			req.Host = tc.host
+			req.Header.Set("Authorization", "Bearer origin-api-token")
+			req.Header.Set("Referer", tc.referer)
+			req.Header.Set("X-Forwarded-Proto", tc.forwarded)
+			res := httptest.NewRecorder()
+			f.app.ServeHTTP(res, req)
+			if res.Code != 200 {
+				t.Fatal("skill download failed", res.Code, res.Body.String())
+			}
+			archive, err := zip.NewReader(bytes.NewReader(res.Body.Bytes()), int64(res.Body.Len()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, file := range archive.File {
+				if file.Name == "schedulerse-agent/connection.json" {
+					reader, err := file.Open()
+					if err != nil {
+						t.Fatal(err)
+					}
+					var metadata map[string]string
+					err = json.NewDecoder(reader).Decode(&metadata)
+					reader.Close()
+					if err != nil || metadata["service_url"] != tc.want || strings.Contains(fmt.Sprint(metadata), "origin-api-token") {
+						t.Fatalf("incorrect or secret-bearing origin: %+v %v", metadata, err)
+					}
+					found = true
+				}
+			}
+			if !found {
+				t.Fatal("missing personalized connection metadata")
+			}
+		})
+	}
+	f.app.Config.CookieSecure = false
+	for _, origin := range []string{"https://attacker.example", "http://example.com/path", "http://user@example.com", "http://example.com?token=secret", "ftp://example.com", "http://example.com#fragment"} {
+		res := agentRequest(f, "GET", "/api/agent/v1/skill.zip?origin="+url.QueryEscape(origin), "origin-api-token", "")
+		if res.Code != 400 {
+			t.Fatalf("accepted invalid download origin %q: %d", origin, res.Code)
+		}
 	}
 }

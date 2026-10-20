@@ -74,9 +74,11 @@ replace an existing setup. Upload the secrets from the Worker deployment directo
 npx wrangler secret bulk /private/schedulerse-connection/cloudflare-secrets.json
 ```
 
-Do not print these files into chat. Use `bridge.py connection --state ...` only to
-transfer the two configuration fields privately into SchedulerSE's settings and
-select **Webhook** delivery.
+Do not print these files into chat. Using the SchedulerSE token and bundled service
+URL, PUT `/api/agent/v1/connection` with `delivery_mode: "webhook"`, `webhook_url`
+set to the deployed URL plus `/hooks/schedulerse`, and `webhook_authorization` set
+to `Bearer ` plus the private `WEBHOOK_TOKEN`. Read the value privately from the
+secret file. No user settings step is required.
 The SchedulerSE API token is unrelated to these two relay tokens and stays in the
 agent's secret store.
 

@@ -221,7 +221,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /settings/agent/skill.zip", serveAgentSkill)
+	mux.HandleFunc("GET /settings/agent/skill.zip", s.serveAgentSkill)
 	mux.HandleFunc("GET /settings/agent/guide", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		_, _ = w.Write([]byte(agentGuide))

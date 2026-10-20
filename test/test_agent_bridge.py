@@ -128,6 +128,49 @@ class BridgeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 bridge.validate_scheduler_origin(invalid)
 
+    def test_local_setup_uses_packaged_address_and_configures_polling(self):
+        token_file = self.state / "api-token"
+        token_file.write_text("private-setup-token")
+        args = SimpleNamespace(action="init-local", scheduler_url=None,
+            token_file=str(token_file), workdir=str(self.state), conversation_id="expected-thread",
+            codex_session=None, command_json=None)
+        with patch.object(bridge, "packaged_service_url", return_value="https://192.0.2.5:9443"), \
+             patch.object(bridge, "request_json", return_value={"delivery_mode": "poll"}) as remote:
+            bridge.initialize(args, self.state)
+        config = json.loads((self.state / "config.json").read_text())
+        self.assertEqual(config["scheduler_url"], "https://192.0.2.5:9443")
+        self.assertEqual(config["api_token"], "private-setup-token")
+        self.assertEqual(remote.call_args.args[1:], ("PUT", "/connection", {"delivery_mode": "poll"}))
+        self.assertFalse((self.state / "cloudflare-secrets.json").exists())
+        # Retrying an initialized connection cannot silently change shared delivery settings.
+        with patch.object(bridge, "request_json") as remote:
+            with self.assertRaises(ValueError):
+                bridge.initialize(args, self.state)
+            remote.assert_not_called()
+
+    def test_failed_connection_setup_does_not_save_half_initialized_config(self):
+        token_file = self.state / "api-token"
+        token_file.write_text("private-setup-token")
+        args = SimpleNamespace(action="init-local", scheduler_url="http://schedulerse:8789",
+            token_file=str(token_file), workdir=str(self.state), conversation_id="expected-thread",
+            codex_session=None, command_json=None)
+        with patch.object(bridge, "request_json", side_effect=OSError("unreachable")):
+            with self.assertRaises(OSError):
+                bridge.initialize(args, self.state)
+        self.assertFalse((self.state / "config.json").exists())
+
+    def test_installed_skill_reads_service_origin_from_adjacent_metadata(self):
+        skill = self.state / "installed-skill"
+        scripts = skill / "scripts"
+        scripts.mkdir(parents=True)
+        metadata = skill / "connection.json"
+        metadata.write_text(json.dumps({"service_url": "http://192.0.2.10:8789"}))
+        with patch.object(bridge, "__file__", str(scripts / "bridge.py")):
+            self.assertEqual(bridge.packaged_service_url(), "http://192.0.2.10:8789")
+            metadata.write_text(json.dumps({"service_url": "https://user:secret@example.com"}))
+            with self.assertRaises(ValueError):
+                bridge.packaged_service_url()
+
 
 if __name__ == "__main__":
     unittest.main()

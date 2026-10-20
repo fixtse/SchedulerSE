@@ -206,10 +206,25 @@ def dispatch(db, state, config):
         print("Agent invocation completed" if code == 0 else "Agent invocation failed; inspect private bridge logs", flush=True)
 
 
+def packaged_service_url():
+    metadata = Path(__file__).resolve().parents[1] / "connection.json"
+    if not metadata.is_file():
+        raise ValueError("Download the skill from your service or provide --scheduler-url")
+    document = json.loads(metadata.read_text())
+    value = document.get("service_url") if isinstance(document, dict) else None
+    if not isinstance(value, str):
+        raise ValueError("Invalid packaged service metadata")
+    validate_scheduler_origin(value)
+    return value
+
+
 def initialize(args, state):
+    if (state / "config.json").exists() or (state / "cloudflare-secrets.json").exists():
+        raise ValueError("Connection already initialized; preserve existing secrets")
     local = args.action == "init-local"
     if local:
-        validate_scheduler_origin(args.scheduler_url)
+        scheduler_url = args.scheduler_url or packaged_service_url()
+        validate_scheduler_origin(scheduler_url)
     else:
         validate_origin(args.relay_url)
     workdir = Path(args.workdir).expanduser().resolve()
@@ -225,7 +240,7 @@ def initialize(args, state):
         token = Path(args.token_file).expanduser().read_text().strip() if args.token_file else getpass.getpass("SchedulerSE API token: ").strip()
         if not token or any(c.isspace() for c in token):
             raise ValueError("A valid API token is required")
-        config.update(transport="scheduler", scheduler_url=args.scheduler_url.rstrip("/"),
+        config.update(transport="scheduler", scheduler_url=scheduler_url.rstrip("/"),
                       api_token=token, consumer_id=secrets.token_urlsafe(32))
     else:
         config.update(transport="cloudflare", relay_url=args.relay_url.rstrip("/"), poll_token=secrets.token_urlsafe(32))
@@ -234,8 +249,8 @@ def initialize(args, state):
         if not isinstance(command, list) or not command or not all(isinstance(v, str) and v for v in command):
             raise ValueError("Command must be a nonempty JSON array of strings")
         config.update(adapter="command", command=command)
-    if (state / "config.json").exists() or (state / "cloudflare-secrets.json").exists():
-        raise ValueError("Connection already initialized; preserve existing secrets")
+    if local:
+        request_json(config, "PUT", "/connection", {"delivery_mode": "poll"})
     private_file(state / "config.json", json.dumps(config, indent=2), exclusive=True)
     if not local:
         secret_values = {"WEBHOOK_TOKEN": secrets.token_urlsafe(32), "POLL_TOKEN": config["poll_token"]}
@@ -267,7 +282,7 @@ def main():
     init = subs.add_parser("init", help="Generate private relay connection files")
     init.add_argument("--relay-url", required=True)
     local = subs.add_parser("init-local", help="Connect directly to SchedulerSE; no webhook server or relay")
-    local.add_argument("--scheduler-url", required=True)
+    local.add_argument("--scheduler-url", help="Override the service address bundled in the downloaded skill")
     local.add_argument("--token-file", help="Private API token file; otherwise prompt without echo")
     for setup in (init, local):
         setup.add_argument("--workdir", required=True)
