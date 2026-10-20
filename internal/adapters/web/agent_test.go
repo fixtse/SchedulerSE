@@ -3,6 +3,8 @@ package web
 import (
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
+	"github.com/fixtse/SchedulerSE/internal/domain"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -178,5 +180,56 @@ func TestAgentSkillDownloadRequiresAuthentication(t *testing.T) {
 	}
 	if !strings.Contains(res.Header().Get("Content-Disposition"), "schedulerse-agent.zip") {
 		t.Fatal("missing download filename")
+	}
+}
+
+func TestLocalAgentInboxWorksWithoutWebhook(t *testing.T) {
+	f := fixture(t)
+	if err := f.store.SetAgentToken(digest("local-api-token")); err != nil {
+		t.Fatal(err)
+	}
+	valid := `{"id":"local-reminder","kind":"reminder","title":"Test local delivery","after_seconds":60,"context":{"conversation_id":"local-chat"}}`
+	res := agentRequest(f, "POST", "/api/agent/v1/tasks", "local-api-token", valid)
+	if res.Code != 201 {
+		t.Fatalf("local task required webhook: %d %s", res.Code, res.Body.String())
+	}
+	if res = agentRequest(f, "POST", "/api/agent/v1/tasks", "local-api-token", strings.Replace(valid, `{"conversation_id":"local-chat"}`, `{}`, 1)); res.Code != 400 {
+		t.Fatal("polling accepted unroutable task", res.Code)
+	}
+	at := time.Now().Unix() - 1
+	if _, err := f.store.DB.Exec(`UPDATE agent_tasks SET run_at=? WHERE id='local-reminder'`, at); err != nil {
+		t.Fatal(err)
+	}
+	if res = agentRequest(f, "GET", "/api/agent/v1/inbox?conversation_id=local-chat", "", ""); res.Code != 401 {
+		t.Fatal("unauthenticated inbox accepted")
+	}
+	res = agentRequest(f, "GET", "/api/agent/v1/inbox?conversation_id=local-chat", "local-api-token", "")
+	var events []domain.AgentEvent
+	if res.Code != 200 || json.Unmarshal(res.Body.Bytes(), &events) != nil || len(events) != 1 || events[0].Task.ID != "local-reminder" {
+		t.Fatal("missing due event", res.Code, res.Body.String())
+	}
+	ack := fmt.Sprintf(`{"run_at_unix":%d,"consumer_id":"stable-random-consumer-identity-123"}`, at)
+	for range 2 {
+		res = agentRequest(f, "POST", "/api/agent/v1/inbox/local-reminder/ack", "local-api-token", ack)
+		if res.Code != 204 {
+			t.Fatal("pickup/retry failed", res.Code, res.Body.String())
+		}
+	}
+	other := strings.Replace(ack, "stable-random-consumer-identity-123", "other-random-consumer-identity-456", 1)
+	if res = agentRequest(f, "POST", "/api/agent/v1/inbox/local-reminder/ack", "local-api-token", other); res.Code != 409 {
+		t.Fatal("another consumer received same occurrence", res.Code)
+	}
+	res = agentRequest(f, "GET", "/api/agent/v1/inbox?conversation_id=local-chat", "local-api-token", "")
+	if res.Code != 200 || strings.TrimSpace(res.Body.String()) != "[]" {
+		t.Fatal("picked-up event remained in inbox", res.Code, res.Body.String())
+	}
+	if err := f.store.SaveAgentWebhook("https://example.com/hook", ""); err != nil {
+		t.Fatal(err)
+	}
+	if res = agentRequest(f, "GET", "/api/agent/v1/inbox?conversation_id=local-chat", "local-api-token", ""); res.Code != 409 {
+		t.Fatal("inbox active in webhook mode", res.Code)
+	}
+	if res = agentRequest(f, "POST", "/api/agent/v1/inbox/local-reminder/ack", "local-api-token", ack); res.Code != 204 {
+		t.Fatal("pickup retry lost after switching mode", res.Code)
 	}
 }

@@ -45,6 +45,8 @@ func (s *Server) agentAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/agent/v1/inbox", s.agentInbox)
+	mux.HandleFunc("POST /api/agent/v1/inbox/{id}/ack", s.agentPickup)
 	mux.HandleFunc("GET /api/agent/v1/skill.zip", serveAgentSkill)
 	mux.HandleFunc("GET /api/agent/v1/guide", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
@@ -131,7 +133,14 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 		agentError(w, 503, "Agent settings unavailable")
 		return
 	}
-	if settings.WebhookURL == "" {
+	if settings.DeliveryMode == "poll" {
+		var conversation string
+		if json.Unmarshal(contextObject["conversation_id"], &conversation) != nil || conversation == "" || len(conversation) > 256 {
+			agentError(w, 400, "Local polling requires context.conversation_id (1–256 bytes)")
+			return
+		}
+	}
+	if settings.DeliveryMode == "webhook" && settings.WebhookURL == "" {
 		agentError(w, 409, "Configure the agent webhook in settings first")
 		return
 	}
@@ -198,6 +207,14 @@ func (s *Server) saveAgentSettings(w http.ResponseWriter, r *http.Request, csrf,
 		http.Error(w, "Agent settings unavailable", 503)
 		return
 	}
+	mode := r.PostFormValue("delivery_mode")
+	if mode == "" {
+		mode = "webhook"
+	} // Preserve older forms already open in a browser.
+	if mode != "poll" && mode != "webhook" {
+		http.Error(w, "Invalid delivery mode", 400)
+		return
+	}
 	endpoint := strings.TrimSpace(r.PostFormValue("webhook_url"))
 	auth := r.PostFormValue("webhook_authorization")
 	if auth == "" {
@@ -216,11 +233,11 @@ func (s *Server) saveAgentSettings(w http.ResponseWriter, r *http.Request, csrf,
 		s.renderAgentSettings(w, 400, csrf, user, "", "", err.Error())
 		return
 	}
-	if err = s.Store.SaveAgentWebhook(endpoint, auth); err != nil {
-		http.Error(w, "Could not save webhook settings", 503)
+	if err = s.Store.SaveAgentConnection(mode, endpoint, auth); err != nil {
+		http.Error(w, "Could not save agent delivery settings", 503)
 		return
 	}
-	s.renderAgentSettings(w, 200, csrf, user, "", "Webhook settings saved. Changes apply to future deliveries.", "")
+	s.renderAgentSettings(w, 200, csrf, user, "", "Agent delivery settings saved. Changes apply to future deliveries.", "")
 }
 func (s *Server) agentToken(w http.ResponseWriter, r *http.Request, csrf, user string) {
 	token, notice := "", "API token revoked. Existing schedules remain active."
@@ -251,4 +268,54 @@ func serveAgentSkill(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="schedulerse-agent.zip"`)
 	_, _ = w.Write(data)
+}
+
+func (s *Server) agentInbox(w http.ResponseWriter, r *http.Request) {
+	settings, err := s.Store.AgentSettings()
+	if err != nil {
+		agentError(w, 503, "Agent settings unavailable")
+		return
+	}
+	if settings.DeliveryMode != "poll" {
+		agentError(w, 409, "Select local polling in Agent API settings")
+		return
+	}
+	conversation := r.URL.Query().Get("conversation_id")
+	if conversation == "" || len(conversation) > 256 {
+		agentError(w, 400, "conversation_id is required (up to 256 bytes)")
+		return
+	}
+	events, err := s.Store.AgentInbox(conversation)
+	if err != nil {
+		agentError(w, 503, "Schedule storage unavailable")
+		return
+	}
+	agentJSON(w, 200, events)
+}
+func (s *Server) agentPickup(w http.ResponseWriter, r *http.Request) {
+	if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" {
+		agentError(w, 415, "Use Content-Type: application/json")
+		return
+	}
+	var input struct {
+		RunAt    int64  `json:"run_at_unix"`
+		Consumer string `json:"consumer_id"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF || input.RunAt <= 0 || !runTokenPattern.MatchString(input.Consumer) {
+		agentError(w, 400, "Provide run_at_unix and a stable random consumer_id of 26–128 letters, digits, underscores or hyphens")
+		return
+	}
+	ok, err := s.Store.PickupAgentTask(r.PathValue("id"), input.RunAt, input.Consumer)
+	if err != nil {
+		agentError(w, 503, "Could not record pickup")
+		return
+	}
+	if !ok {
+		agentError(w, 409, "Occurrence cancelled, unavailable, or picked up by another consumer")
+		return
+	}
+	w.WriteHeader(204)
 }

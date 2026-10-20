@@ -85,6 +85,49 @@ class BridgeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 bridge.validate_origin(bad)
 
+    def test_local_pickup_retries_lost_response_before_executing(self):
+        self.config.update(transport="scheduler", scheduler_url="http://schedulerse:8789",
+                           api_token="private-api", consumer_id="stable-random-consumer-identity-123")
+        self.event["task"]["run_at_unix"] = 1792566000
+        def uncertain(config, method, path, payload=None):
+            if method == "GET":
+                return [self.event]
+            with bridge.database(self.state) as other:
+                self.assertEqual(other.execute("SELECT status FROM receipts").fetchone()[0], "awaiting")
+            raise OSError("server accepted pickup but response was lost")
+        with patch.object(bridge, "request_json", side_effect=uncertain):
+            with self.assertRaises(OSError):
+                bridge.intake_local(self.db, self.config)
+        with patch.object(bridge.subprocess, "run") as invoke:
+            bridge.dispatch(self.db, self.state, self.config)
+            invoke.assert_not_called()
+        # Acknowledged occurrences are no longer listed, but awaiting local receipts retry.
+        with patch.object(bridge, "request_json", side_effect=[[], None]) as remote:
+            bridge.intake_local(self.db, self.config)
+            self.assertEqual(remote.call_args_list[-1].args[3]["consumer_id"], self.config["consumer_id"])
+        self.assertEqual(self.db.execute("SELECT status FROM receipts").fetchone()[0], "received")
+        with patch.object(bridge.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as invoke:
+            bridge.dispatch(self.db, self.state, self.config)
+            bridge.dispatch(self.db, self.state, self.config)
+            self.assertEqual(invoke.call_count, 1)
+
+    def test_local_competing_consumer_skips_agent_invocation(self):
+        self.config.update(transport="scheduler", consumer_id="stable-random-consumer-identity-123")
+        self.event["task"]["run_at_unix"] = 1792566000
+        conflict = bridge.urllib.error.HTTPError("http://schedulerse:8789", 409, "Claimed elsewhere", {}, None)
+        with patch.object(bridge, "request_json", side_effect=[[self.event], conflict]):
+            bridge.intake_local(self.db, self.config)
+        self.assertEqual(self.db.execute("SELECT status FROM receipts").fetchone()[0], "skipped")
+        with patch.object(bridge.subprocess, "run") as invoke:
+            bridge.dispatch(self.db, self.state, self.config)
+            invoke.assert_not_called()
+
+    def test_local_origin_accepts_docker_service_dns(self):
+        bridge.validate_scheduler_origin("http://schedulerse:8789")
+        for invalid in ("http://secret@schedulerse:8789", "http://schedulerse:8789/?token=secret"):
+            with self.assertRaises(ValueError):
+                bridge.validate_scheduler_origin(invalid)
+
 
 if __name__ == "__main__":
     unittest.main()

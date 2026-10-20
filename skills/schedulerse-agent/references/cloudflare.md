@@ -1,7 +1,7 @@
 # Cloudflare inbox and outbound bridge
 
-Use this fallback for standalone Codex or an agent with a real external invocation
-command. It does not post into T3 conversations: prefer T3's native receiver there.
+Use this optional fallback only when direct local polling is unsuitable, for standalone
+Codex or an agent with a real external invocation command. It does not post into T3 conversations: prefer T3's native receiver there.
 The Worker has a stable workers.dev URL and D1 storage. No domain, inbound local
 port or tunnel process is needed. Cloudflare currently offers Workers and D1 free
 allowances; this is suitable for light reminders within those quotas, not a promise
@@ -75,7 +75,8 @@ npx wrangler secret bulk /private/schedulerse-connection/cloudflare-secrets.json
 ```
 
 Do not print these files into chat. Use `bridge.py connection --state ...` only to
-transfer the two configuration fields privately into SchedulerSE's settings.
+transfer the two configuration fields privately into SchedulerSE's settings and
+select **Webhook** delivery.
 The SchedulerSE API token is unrelated to these two relay tokens and stays in the
 agent's secret store.
 

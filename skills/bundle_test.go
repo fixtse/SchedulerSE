@@ -18,7 +18,7 @@ func TestAgentArchiveIsSelfContainedAndExcludesRuntimeSecrets(t *testing.T) {
 	}
 	required := map[string]bool{
 		"SKILL.md": false, "scripts/bridge.py": false, "references/t3.md": false,
-		"references/cloudflare.md": false, "assets/cloudflare/worker.mjs": false,
+		"references/cloudflare.md": false, "references/local.md": false, "assets/cloudflare/worker.mjs": false,
 		"assets/cloudflare/schema.sql": false, "assets/cloudflare/wrangler.json": false,
 	}
 	for _, file := range archive.File {

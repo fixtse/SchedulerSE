@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Durable outbound reminder bridge. Python 3 standard library only."""
+"""Durable local reminder consumer; optional Cloudflare relay. Standard library only."""
 import argparse
 import contextlib
 import hashlib
+import getpass
 import json
 import os
 from pathlib import Path
@@ -86,18 +87,68 @@ def validate_origin(base):
         raise ValueError("Relay URL must be an HTTPS origin without credentials")
 
 
-def request_json(config, method, path):
-    base = config["relay_url"]
-    validate_origin(base)
-    req = urllib.request.Request(base.rstrip("/") + path, method=method,
-        headers={"Authorization": "Bearer " + config["poll_token"], "Accept": "application/json"})
-    with urllib.request.build_opener(NoRedirect()).open(req, timeout=20) as response:
+def validate_scheduler_origin(base):
+    parsed = urllib.parse.urlsplit(base)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("", "/"):
+        raise ValueError("Scheduler URL must be an HTTP(S) origin without credentials")
+
+
+def request_json(config, method, path, payload=None):
+    if config.get("transport") == "scheduler":
+        base, token = config["scheduler_url"], config["api_token"]
+        validate_scheduler_origin(base)
+        path = "/api/agent/v1" + path
+    else:
+        base, token = config["relay_url"], config["poll_token"]
+        validate_origin(base)
+    headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode()
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(base.rstrip("/") + path, method=method, data=data, headers=headers)
+    handlers = [NoRedirect()]
+    if config.get("transport") == "scheduler":
+        handlers.append(urllib.request.ProxyHandler({}))  # Docker DNS must resolve directly on the local network.
+    with urllib.request.build_opener(*handlers).open(req, timeout=20) as response:
         if response.status == 204:
             return None
         body = response.read(1048577)
         if len(body) > 1048576:
             raise ValueError("Inbox response too large")
         return json.loads(body)
+
+
+def intake_local(db, config):
+    query = urllib.parse.urlencode({"conversation_id": config["conversation_id"]})
+    events = request_json(config, "GET", "/inbox?" + query)
+    if not isinstance(events, list) or len(events) > 10:
+        raise ValueError("Invalid inbox response")
+    for event in events:
+        ident = validate_event(event, config["conversation_id"])
+        payload = json.dumps(event, sort_keys=True, separators=(",", ":"))
+        db.execute("INSERT OR IGNORE INTO receipts(id,payload,status,received_at) VALUES(?,?,'awaiting',?)",
+                   (ident, payload, int(time.time())))
+        db.commit()
+        saved = db.execute("SELECT payload FROM receipts WHERE id=?", (ident,)).fetchone()
+        if saved[0] != payload:
+            raise ValueError("Event ID conflicts with a local receipt")
+    # Retry durable unconfirmed pickups even when the server no longer lists them.
+    # Its consumer ID receipt distinguishes our lost response from another consumer.
+    for ident, payload in db.execute("SELECT id,payload FROM receipts WHERE status='awaiting'").fetchall():
+        event = json.loads(payload)
+        validate_event(event, config["conversation_id"])
+        task = event["task"]
+        try:
+            request_json(config, "POST", "/inbox/" + urllib.parse.quote(task["id"], safe="") + "/ack",
+                         {"run_at_unix": task["run_at_unix"], "consumer_id": config["consumer_id"]})
+        except urllib.error.HTTPError as error:
+            if error.code != 409:
+                raise
+            db.execute("UPDATE receipts SET status='skipped' WHERE id=? AND status='awaiting'", (ident,))
+        else:
+            db.execute("UPDATE receipts SET status='received' WHERE id=? AND status='awaiting'", (ident,))
+        db.commit()
 
 
 def intake(db, config):
@@ -156,25 +207,39 @@ def dispatch(db, state, config):
 
 
 def initialize(args, state):
-    validate_origin(args.relay_url)
+    local = args.action == "init-local"
+    if local:
+        validate_scheduler_origin(args.scheduler_url)
+    else:
+        validate_origin(args.relay_url)
     workdir = Path(args.workdir).expanduser().resolve()
     if not workdir.is_dir():
         raise ValueError("Work directory does not exist")
     if args.codex_session and args.codex_session.startswith("-"):
         raise ValueError("Invalid Codex session ID")
-    config = {"relay_url": args.relay_url.rstrip("/"), "poll_token": secrets.token_urlsafe(32),
-              "conversation_id": args.conversation_id, "workdir": str(workdir),
+    if not args.conversation_id or len(args.conversation_id.encode()) > 256:
+        raise ValueError("Conversation routing label must be 1–256 bytes")
+    config = {"conversation_id": args.conversation_id, "workdir": str(workdir),
               "adapter": "codex", "codex_session": args.codex_session}
+    if local:
+        token = Path(args.token_file).expanduser().read_text().strip() if args.token_file else getpass.getpass("SchedulerSE API token: ").strip()
+        if not token or any(c.isspace() for c in token):
+            raise ValueError("A valid API token is required")
+        config.update(transport="scheduler", scheduler_url=args.scheduler_url.rstrip("/"),
+                      api_token=token, consumer_id=secrets.token_urlsafe(32))
+    else:
+        config.update(transport="cloudflare", relay_url=args.relay_url.rstrip("/"), poll_token=secrets.token_urlsafe(32))
     if args.command_json:
         command = json.loads(args.command_json)
         if not isinstance(command, list) or not command or not all(isinstance(v, str) and v for v in command):
             raise ValueError("Command must be a nonempty JSON array of strings")
         config.update(adapter="command", command=command)
-    secret_values = {"WEBHOOK_TOKEN": secrets.token_urlsafe(32), "POLL_TOKEN": config["poll_token"]}
     if (state / "config.json").exists() or (state / "cloudflare-secrets.json").exists():
         raise ValueError("Connection already initialized; preserve existing secrets")
     private_file(state / "config.json", json.dumps(config, indent=2), exclusive=True)
-    private_file(state / "cloudflare-secrets.json", json.dumps(secret_values), exclusive=True)
+    if not local:
+        secret_values = {"WEBHOOK_TOKEN": secrets.token_urlsafe(32), "POLL_TOKEN": config["poll_token"]}
+        private_file(state / "cloudflare-secrets.json", json.dumps(secret_values), exclusive=True)
     print("Private connection files saved in " + str(state))
 
 
@@ -201,28 +266,35 @@ def main():
     subs = parser.add_subparsers(dest="action", required=True)
     init = subs.add_parser("init", help="Generate private relay connection files")
     init.add_argument("--relay-url", required=True)
-    init.add_argument("--workdir", required=True)
-    init.add_argument("--conversation-id", required=True)
-    init.add_argument("--codex-session")
-    init.add_argument("--command-json", help="Trusted local argv array; stdin receives callback JSON")
+    local = subs.add_parser("init-local", help="Connect directly to SchedulerSE; no webhook server or relay")
+    local.add_argument("--scheduler-url", required=True)
+    local.add_argument("--token-file", help="Private API token file; otherwise prompt without echo")
+    for setup in (init, local):
+        setup.add_argument("--workdir", required=True)
+        setup.add_argument("--conversation-id", required=True)
+        setup.add_argument("--codex-session")
+        setup.add_argument("--command-json", help="Trusted local argv array; stdin receives callback JSON")
     run = subs.add_parser("run", help="Poll the relay and invoke the configured agent")
     run.add_argument("--once", action="store_true")
     receipt = subs.add_parser("claim", help="Claim a native webhook event supplied through stdin")
     receipt.add_argument("--conversation-id", required=True)
     subs.add_parser("connection", help="Show fields to copy privately into SchedulerSE settings")
-    for sub in (init, run, receipt):
+    for sub in (init, local, run, receipt):
         sub.add_argument("--state", default=str(DEFAULT_STATE))
     # Keep argument position consistent across subcommands.
     subs.choices["connection"].add_argument("--state", default=str(DEFAULT_STATE))
     args = parser.parse_args()
     state = private_dir(args.state)
-    if args.action == "init":
+    if args.action in ("init", "init-local"):
         initialize(args, state)
         return 0
     if args.action == "claim":
         return claim(args, state)
     config = json.loads((state / "config.json").read_text())
     if args.action == "connection":
+        if config.get("transport") == "scheduler":
+            print("Delivery mode: Local agent (polling). No webhook configuration needed.")
+            return 0
         tokens = json.loads((state / "cloudflare-secrets.json").read_text())
         print("Webhook URL: " + config["relay_url"] + "/hooks/schedulerse")
         print("Webhook Authorization header: Bearer " + tokens["WEBHOOK_TOKEN"])
@@ -233,10 +305,13 @@ def main():
         while True:
             success = True
             try:
-                intake(db, config)
+                if config.get("transport") == "scheduler":
+                    intake_local(db, config)
+                else:
+                    intake(db, config)
             except (OSError, ValueError, urllib.error.URLError):
                 success = False
-                print("Inbox transfer unavailable; check relay credentials and routing", file=sys.stderr, flush=True)
+                print("Inbox transfer unavailable; check delivery mode, API credentials, address and routing", file=sys.stderr, flush=True)
             dispatch(db, state, config)
             if args.once:
                 return 0 if success else 1

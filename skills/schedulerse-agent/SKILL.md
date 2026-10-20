@@ -5,11 +5,11 @@ description: Connect an agent to SchedulerSE and schedule timers, reminders or t
 
 # SchedulerSE agent
 
-Make reminders usable without asking the user to build a webhook server. Prefer an
-existing agent webhook; otherwise deploy the included Cloudflare inbox and run its
-outbound polling bridge. A skill supplies instructions, not a background runtime.
-Do not report a reminder as connected until an end-to-end callback reaches its
-intended conversation. Installing this skill alone does not enable callbacks.
+Connect directly to the local SchedulerSE API using outbound polling. The service
+can run inside Docker: no callback hostname, inbound agent server, tunnel or
+Cloudflare account is needed. The included bridge picks up due events and invokes
+the agent. A skill supplies instructions, not a background runtime. Do not report a
+connection complete until an end-to-end reminder reaches the intended destination.
 
 ## Connect once
 
@@ -18,23 +18,21 @@ intended conversation. Installing this skill alone does not enable callbacks.
    **Agent API settings**. Do not request secrets in ordinary chat or store them in
    schedules. Read the installation's authenticated `/api/agent/v1/guide` for the
    precise API contract before creating tasks.
-2. **In T3 Code**, inspect the available scheduler tools. If `schedule_task`
-   supports `{type:"webhook"}`, follow [references/t3.md](references/t3.md).
-   This is the shortest path and needs no separate Cloudflare account or local
-   daemon when T3 Connect remote access is enabled.
-3. **Outside T3, or without a public native webhook**, follow
-   [references/cloudflare.md](references/cloudflare.md). The included Worker accepts
-   callbacks while the computer is offline; a Python bridge durably transfers them
-   to the local host and invokes Codex or a configured command. One Cloudflare login
-   is required. Do not silently switch an account to a paid plan.
-4. Fill **Webhook URL** and optional **Webhook Authorization header** in SchedulerSE
-   settings using an existing authenticated browser session when available. Otherwise
-   give the user these exact two fields to paste privately. API tokens cannot modify
-   settings. Do not invent an authenticated configuration endpoint.
+2. **Default: local agent polling.** Follow [references/local.md](references/local.md).
+   Select **Local agent (polling)** in settings, initialize the bridge with the URL
+   reachable from its own host/container, and supervise it as a persistent process.
+   Existing webhook installations retain webhook mode until explicitly changed.
+3. **Optional native T3 delivery:** when the user wants reminders in a T3 thread and
+   the host exposes an actual reachable webhook, use [references/t3.md](references/t3.md).
+   Local Codex CLI execution does not put messages into T3's UI. If no local T3
+   integration is available, disclose that before choosing a standalone CLI consumer.
+4. **Optional remote relay:** only when the scheduler cannot reach the agent and
+   direct polling is unsuitable, use [references/cloudflare.md](references/cloudflare.md).
+   Do not provision public resources or require Cloudflare for a local installation.
 5. Schedule one clearly labelled setup check for 30 seconds from now. Verify the
-   intended agent/thread actually receives it, then report the connection and its
-   operational dependency (T3 Connect or a supervised bridge). Do not create recurring
-   test reminders. If a dependency is unavailable, state it and keep setup incomplete.
+   intended agent/session actually receives it, then report the connection and its
+   runtime dependency. Do not create recurring test reminders. If the intended
+   destination is unavailable, state that and keep setup incomplete.
 
 This skill package can be copied into the agent's supported skill directory; it has
 no dependency on a repository checkout or another skill. In Codex, use its installed
@@ -52,7 +50,7 @@ Confirm the saved due time and destination. Cancellation uses DELETE on the task
 
 A token controls this installation's shared agent schedules, not just one conversation.
 Only inspect or cancel schedules relevant to the user's request. No API token or
-Cloudflare credential belongs in `context` or a callback body.
+receiver credential belongs in `context` or a callback body.
 
 ## Handle a due event
 
@@ -69,7 +67,7 @@ claim, exit 3 means an existing claim and no further action. A claim left by an
 interrupted turn needs inspection before replay. Report a reminder in its bound
 thread; perform scheduled work only within the original request's scope.
 
-For Cloudflare, the bridge handles durable receipts and invocation claims. Inspect
+For local polling and Cloudflare, the bridge handles durable receipts and invocation claims. Inspect
 its SQLite state and output logs for failed/interrupted invocations; it never retries
 an uncertain agent action automatically. SchedulerSE's successful delivery status
 means the receiver accepted the event, not that the AI finished the task.

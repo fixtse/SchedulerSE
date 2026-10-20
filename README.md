@@ -85,33 +85,35 @@ manually does not enable its schedule.
 
 Open **Agent API settings** after signing in:
 
-For guided setup, click **Download agent skill**, install the extracted
-`schedulerse-agent` folder in your agent, and ask it to connect to this installation.
-Provide the installation URL and API token privately. In T3 Code it uses a native
-webhook task through T3 Connect, so no extra webhook server or Cloudflare account is
-needed. The standalone Codex fallback includes a Cloudflare Worker/D1 inbox and a
-Python bridge that polls outbound, stores receipts durably and invokes Codex. The
-agent handles provisioning; the user still needs to authenticate Cloudflare and keep
-the bridge supervised. See [the portable skill](skills/schedulerse-agent/SKILL.md).
-Cloudflare offers free allowances, subject to its current quotas; no paid plan is
-required by this kit. The relay does not supply free AI inference.
+1. Select **Local agent (polling)** and generate an API token. Fresh installations
+   use polling by default; existing webhook connections retain webhook mode until
+   changed. The token is shown once; only its SHA-256 hash is saved.
+2. Click **Download agent skill**, install the extracted `schedulerse-agent` folder
+   in your agent, and ask it to connect to this installation. Provide the reachable
+   installation URL and API token privately.
+3. Keep the skill's Python bridge running beside your agent using a process supervisor.
+   It picks up due reminders, stores receipts durably and invokes Codex or the chosen
+   agent adapter. No AI request is made when the inbox is empty.
 
-For manual setup:
+**Docker needs no callback to the host.** A bridge on the same Compose network can
+connect to `http://schedulerse:8789`; a bridge on the host uses the existing published
+service URL. The scheduler makes no connection back to the agent. No inbound bridge
+port, public hostname, Cloudflare account or tunnel is required. The agent runtime,
+its normal credentials and persistent bridge state must exist where the bridge runs.
+A bare Python container cannot invoke a Codex binary installed only on the host.
+See [the local setup instructions](skills/schedulerse-agent/references/local.md).
 
-1. Save the webhook URL provided by your agent platform or your agent bridge.
-   Set a separate Authorization header that the receiving webhook verifies, or
-   use a native T3 receiver’s generated secret URL with a blank header.
-2. Generate an API token and copy it into your agent’s secret store. It is shown
-   once; only its SHA-256 hash is saved. Replacing or revoking it invalidates the
-   previous token immediately.
-3. Give the agent this installation’s URL and the **agent setup guide** linked in
-   settings. The guide is also available in
-   [agent-guide.md](internal/adapters/web/agent-guide.md).
+Standalone Codex turns write their output locally or resume an explicit CLI session;
+they do not automatically appear in T3 Code's UI. For reminders in a T3 thread, use
+its native webhook integration when reachable. **Webhook** delivery and the optional
+Cloudflare inbox remain available for remote integrations; the skill does not
+provision them for a local setup. Webhook URLs and credentials are set in the browser
+settings, separately from the agent API token.
 
 The bearer-authenticated JSON API at `/api/agent/v1` can create, list, inspect and
 cancel agent schedules. Tokens have access only to agent schedules, with no access
 to automation jobs, account settings or webhook credentials. There is one shared
-agent token and callback destination per installation; use this with trusted agents.
+agent token and delivery mode per installation; use this with trusted agents.
 The **Agent schedules** tab keeps these items separate from **Your automations**
 and its execution history. It shows status, UTC due time, recurrence, callback
 HTTP result, errors and routing context, and lets you cancel pending items.
@@ -132,21 +134,27 @@ recurrence (minimum 60 seconds); calendar schedules remain available in automati
 Stable caller-chosen IDs prevent duplicate creation after an uncertain API response.
 GET `/api/agent/v1/tasks/{id}` to check the result before retrying a creation.
 
-Each due item sends a `schedule.due` JSON callback with a stable occurrence
-`event_id`, the scheduled time, and the task’s message and unchanged `context`.
-The webhook receiver must durably accept the callback, return 2xx within 10 seconds,
-and route it to the intended agent/conversation. SchedulerSE supplies scheduling
-and delivery; the receiving platform supplies agent execution and user messaging.
-Use HTTPS for remote access to both the API and callback endpoint.
+Each due occurrence produces a `schedule.due` envelope with a stable `event_id`,
+the scheduled time, and the task's message and unchanged `context`. Local polling
+requires `context.conversation_id` to match the bridge's routing label. A bridge
+saves each occurrence before atomically acknowledging pickup; stable consumer IDs
+make acknowledgements safe to retry after a lost response and prevent two different
+consumers from claiming the same occurrence. Delivery status means acceptance by the
+consumer, not completion by the AI. Due schedules wait while the bridge is stopped.
 
-Pending schedules persist across restarts and overdue items run when the service
-returns. Callbacks are attempted once without redirects or automatic retries;
-failed recurrences stop. In-flight deliveries interrupted by a crash are marked
-`interrupted` on startup and are not replayed. After a successful recurring callback,
-missed recurrence slots are skipped. Delivery is sequential and intended for lightweight
-reminders, not precise alarms or high-throughput queues. Removing the webhook pauses
-pending deliveries. Changing it applies to future callbacks. Revoking an API token
-blocks API access but leaves existing schedules active; cancel those separately.
+In webhook mode, the receiver must durably accept the callback and return 2xx within
+10 seconds. Callbacks are attempted once without redirects or automatic retries;
+failed webhook recurrences stop. In-flight callbacks interrupted by a crash are
+marked `interrupted` on startup and are not replayed. An existing callback can finish
+while switching delivery modes. Pending schedules survive mode changes and restarts.
+
+Recurrence advances after pickup or successful callback and skips missed slots.
+Local invocation failures do not undo pickup or stop future recurring pickups;
+inspect the bridge's failed/interrupted receipts before explicitly repeating work.
+Revoking an API token stops polling access but leaves schedules intact. Webhook
+execution is independent of API token revocation. Cancel unwanted pending schedules
+separately. Use HTTP only on trusted local networks and HTTPS for remote API/callback
+access.
 
 ## Retries and fallback
 

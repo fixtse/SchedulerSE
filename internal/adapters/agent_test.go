@@ -123,3 +123,105 @@ func TestAgentCancelPauseAndRestart(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalPollingPickupIsDurableAndIdempotent(t *testing.T) {
+	store := testStore(t)
+	settings, err := store.AgentSettings()
+	if err != nil || settings.DeliveryMode != "poll" {
+		t.Fatalf("new install: %+v %v", settings, err)
+	}
+	calls := 0
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(204) }))
+	defer receiver.Close()
+	if err = store.SaveAgentConnection("poll", receiver.URL, "Bearer unused"); err != nil {
+		t.Fatal(err)
+	}
+	task := domain.AgentTask{ID: "local-pickup", Kind: "timer", Title: "Local reminder", Context: json.RawMessage(`{"conversation_id":"local-thread"}`), RunAt: time.Now().Unix() - 125, IntervalSeconds: 60}
+	if err = store.CreateAgentTask(task); err != nil {
+		t.Fatal(err)
+	}
+	store.deliverAgent(context.Background(), NewHTTP(Config{}))
+	if calls != 0 {
+		t.Fatal("polling made an outbound callback")
+	}
+	events, err := store.AgentInbox("local-thread")
+	if err != nil || len(events) != 1 || events[0].EventID != task.Event().EventID {
+		t.Fatalf("inbox: %+v %v", events, err)
+	}
+	other, err := store.AgentInbox("other-thread")
+	if err != nil || len(other) != 0 {
+		t.Fatal("inbox lost routing filter", err)
+	}
+	for _, consumer := range []string{"consumer-one", "consumer-one"} {
+		ok, err := store.PickupAgentTask(task.ID, task.RunAt, consumer)
+		if err != nil || !ok {
+			t.Fatal("pickup or retry failed", err)
+		}
+	}
+	ok, err := store.PickupAgentTask(task.ID, task.RunAt, "consumer-two")
+	if err != nil || ok {
+		t.Fatal("different consumer picked up same occurrence", err)
+	}
+	saved, err := store.AgentTask(task.ID)
+	if err != nil || saved.RunAt <= time.Now().Unix() || saved.Status != "pending" {
+		t.Fatalf("recurrence: %+v %v", saved, err)
+	}
+	if err = store.SaveAgentConnection("webhook", receiver.URL, ""); err != nil {
+		t.Fatal(err)
+	}
+	ok, err = store.PickupAgentTask(task.ID, task.RunAt, "consumer-one")
+	if err != nil || !ok {
+		t.Fatal("lost response could not be confirmed after mode switch", err)
+	}
+	ok, err = store.PickupAgentTask(task.ID, saved.RunAt, "consumer-one")
+	if err != nil || ok {
+		t.Fatal("new pickup allowed in webhook mode", err)
+	}
+}
+
+func TestLocalPollingRejectsCancelledAndFutureOccurrences(t *testing.T) {
+	store := testStore(t)
+	for _, name := range []string{"cancelled", "future", "one-shot"} {
+		task := domain.AgentTask{ID: name, Kind: "timer", Title: name, Context: json.RawMessage(`{"conversation_id":"local"}`), RunAt: time.Now().Unix() - 1}
+		if name == "future" {
+			task.RunAt += 3600
+		}
+		if err := store.CreateAgentTask(task); err != nil {
+			t.Fatal(err)
+		}
+		if name == "cancelled" {
+			if ok, err := store.CancelAgentTask(name); err != nil || !ok {
+				t.Fatal("cancel failed", err)
+			}
+		}
+		ok, err := store.PickupAgentTask(name, task.RunAt, "consumer-one")
+		if err != nil || ok != (name == "one-shot") {
+			t.Fatalf("pickup %s: %v %v", name, ok, err)
+		}
+	}
+	events, err := store.AgentInbox("local")
+	if err != nil || len(events) != 0 {
+		t.Fatal("inbox returned consumed or future events", err)
+	}
+	task, err := store.AgentTask("one-shot")
+	if err != nil || task.Status != "delivered" || task.HTTPStatus != 0 {
+		t.Fatalf("pickup status: %+v %v", task, err)
+	}
+}
+
+func TestAgentModeMigrationPreservesWebhookConnections(t *testing.T) {
+	store := testStore(t)
+	_, err := store.DB.Exec(`DROP TABLE agent_settings;
+ CREATE TABLE agent_settings(id INTEGER PRIMARY KEY,token_hash TEXT NOT NULL,webhook_url TEXT NOT NULL,webhook_auth TEXT NOT NULL);
+ INSERT INTO agent_settings VALUES(1,'saved-hash','https://example.com/hook','Bearer saved-header')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = migrateAgent(store.DB); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := store.AgentSettings()
+	if err != nil || settings.DeliveryMode != "webhook" || settings.WebhookURL != "https://example.com/hook" || settings.TokenHash != "saved-hash" || settings.WebhookAuth != "Bearer saved-header" {
+		t.Fatalf("migration changed connection: %+v %v", settings, err)
+	}
+}
