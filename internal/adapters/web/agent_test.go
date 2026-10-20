@@ -367,7 +367,7 @@ func TestAgentSetupGuideIsReadableInSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	if response.StatusCode != 200 || !strings.HasPrefix(response.Header.Get("Content-Type"), "text/html") || response.Header.Get("Content-Disposition") != "" {
-		t.Fatal("guide was not displayed as an app page", response.StatusCode, response.Header())
+		t.Fatal("guide was not displayed as an app page", response.StatusCode, response.Header)
 	}
 	if !strings.Contains(string(body), "Connect in three steps") || !strings.Contains(string(body), "guide.md") || !strings.Contains(string(body), "conversation_id") || !strings.Contains(string(body), `href="/settings/agent/skill.zip"`) {
 		t.Fatal("guide omitted setup instructions, download or API reference")
