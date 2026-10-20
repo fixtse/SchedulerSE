@@ -35,13 +35,21 @@ var stylesheet string
 //go:embed schedule.js
 var scheduleJS string
 
+//go:embed vendor/htmx.min.js
+var htmxJS string
+
 //go:embed favicon.svg
 var faviconSVG []byte
 
 //go:embed favicon.ico
 var faviconICO []byte
 
-var pages = template.Must(template.New("page").Parse(pageHTML))
+var pages = template.Must(template.New("page").Funcs(template.FuncMap{
+	"styleURL":  styleAsset.URL,
+	"scriptURL": scriptAsset.URL,
+	"htmxURL":   htmxAsset.URL,
+	"uiVersion": func() string { return uiAssetVersion },
+}).Parse(pageHTML))
 
 type Server struct {
 	Store      *adapters.Store
@@ -118,7 +126,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "same-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+	// A tab with assets from the previous release must reload its head before
+	// rendering newly deployed markup. Ordinary navigation is unaffected.
+	if version := r.Header.Get("X-SchedulerSE-UI"); r.Method == http.MethodGet && r.Header.Get("HX-Boosted") == "true" && version != "" && version != uiAssetVersion {
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if r.URL.Path == "/favicon.svg" || r.URL.Path == "/favicon.ico" {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
@@ -154,14 +169,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"ok","schedulerEnabled":true}`))
 		return
 	}
-	if r.URL.Path == "/schedule.js" && r.Method == http.MethodGet {
-		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		_, _ = w.Write([]byte(scheduleJS))
+	if r.URL.Path == htmxAsset.path {
+		htmxAsset.ServeHTTP(w, r)
 		return
 	}
-	if r.URL.Path == "/style.css" && r.Method == http.MethodGet {
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		_, _ = w.Write([]byte(stylesheet))
+	if r.URL.Path == scriptAsset.path {
+		scriptAsset.ServeHTTP(w, r)
+		return
+	}
+	if r.URL.Path == styleAsset.path {
+		styleAsset.ServeHTTP(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/agent/") {

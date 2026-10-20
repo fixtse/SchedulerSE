@@ -58,6 +58,17 @@ from the server (default: 120000 ms). The saved timeout applies to scheduled and
 manual requests, including response-body reads. Existing tasks inherit the server
 default until an override is saved. Telegram delivery keeps its separate timeout.
 
+## Web navigation
+
+Page links use a locally bundled copy of HTMX 2.0.11 to replace page content while
+keeping the stylesheet loaded. Forms and file downloads use ordinary browser
+navigation; links also work when JavaScript is unavailable. Navigation errors fall
+back to a normal page load. Authenticated pages remain `no-store`, and HTMX history
+snapshots are disabled. Public CSS and scripts use content-versioned URLs so browsers
+can reuse them across page changes. An open tab reloads its document when it detects
+a release with changed assets. No external
+CDN is required. The vendored HTMX license is included in the source and image.
+
 ## Scheduling and manual runs
 
 Choose **Manual only**, **Every few minutes**, **Hourly**, **Daily**, **Weekly**, or

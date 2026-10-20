@@ -35,6 +35,8 @@ jobs:
         run: |
           python3 -m unittest discover -s test -p 'test_agent_bridge.py'
           node --check skills/schedulerse-agent/assets/cloudflare/worker.mjs
+          node --check internal/adapters/web/schedule.js
+          node --check internal/adapters/web/vendor/htmx.min.js
 
   image:
     needs: verify

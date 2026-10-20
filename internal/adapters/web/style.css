@@ -10,3 +10,6 @@ button:disabled{cursor:not-allowed;opacity:.5}.account{flex-wrap:wrap}@media(max
 .workspace-tabs a{padding:.8rem 0;text-decoration:none}
 .workspace-tabs a[aria-current=page]{border-bottom:3px solid currentColor;font-weight:700}
 .agent-context{white-space:pre-wrap;overflow-wrap:anywhere;max-height:16rem;overflow:auto}
+
+/* Keep the styled page visible while enhanced navigation is in flight. */
+a.htmx-request{cursor:progress}

@@ -26,6 +26,7 @@ RUN apk add --no-cache ca-certificates \
     && mkdir -p /data /app && chown schedulerse:schedulerse /data
 COPY --from=build /out/schedulerse /app/schedulerse
 COPY LICENSE /usr/share/licenses/schedulerse/LICENSE
+COPY internal/adapters/web/vendor/htmx-LICENSE /usr/share/licenses/htmx/LICENSE
 ENV DATA_DIR=/data LISTEN_ADDR=:8789
 USER 1000:1000
 EXPOSE 8789
