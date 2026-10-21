@@ -456,3 +456,27 @@ func TestScheduleManagementAndManualExecution(t *testing.T) {
 		t.Fatal("unauthenticated manual execution accepted")
 	}
 }
+
+func TestManualBashAutomationOmitsSchedulingControls(t *testing.T) {
+	f := fixture(t)
+	token := f.setup(t)
+	form := url.Values{"csrf": {token}, "id": {"manual-script"}, "name": {"Manual script"}, "kind": {"bash"}, "script": {"echo hello"}, "schedule_mode": {"manual"}, "enabled": {"on"}, "recovery_settings": {"1"}, "retry_count": {"3"}, "fallback_url": {"https://example.com/fallback"}}
+	code, body, _ := f.post(t, "/jobs/new", form)
+	if code != 303 {
+		t.Fatalf("create manual script: %d %s", code, body)
+	}
+	job, err := f.store.Job("manual-script")
+	if err != nil || job.Enabled || job.RetryCount != 0 || job.FallbackURL != "" {
+		t.Fatalf("manual script retained scheduling or HTTP recovery: %#v %v", job, err)
+	}
+	_, body = f.get(t, "/")
+	for _, card := range strings.Split(body, `<article class="job-card">`) {
+		if !strings.Contains(card, `/jobs/manual-script"`) {
+			continue
+		}
+		card = strings.Split(card, "</article>")[0]
+		if strings.Contains(card, "/toggle") || strings.Contains(card, "Disabled") || !strings.Contains(card, "Manual only") || !strings.Contains(card, "/run") {
+			t.Fatal("manual card must offer Run now without scheduling controls", card)
+		}
+	}
+}

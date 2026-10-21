@@ -81,11 +81,11 @@
         </div>
         {{if .Notice}}<div class="notice" role="status">{{.Notice}} <a href="/">Refresh activity →</a></div>{{end}}
         <div class="section-label">
-            <h2>Automations</h2><span>POST requests</span>
+            <h2>Automations</h2><span>HTTP POST &amp; Bash scripts</span>
         </div>
         <div class="jobs">{{range .Jobs}}<article class="job-card">
                 <div class="card-top"><span class="job-icon">↗</span><span
-                        class="badge {{if .Enabled}}enabled{{end}}">{{if .Enabled}}Enabled{{else}}Disabled{{end}}</span>
+                        class="badge {{if .Enabled}}enabled{{end}}">{{if not .Cron}}Manual only{{else if .Enabled}}Enabled{{else}}Disabled{{end}}</span>
                 </div>
                 <h3><a href="/jobs/{{.ID}}">{{.Name}}</a></h3>
                 <p class="endpoint">{{if eq .Kind "bash"}}Bash script{{else}}{{.URL}}{{end}}</p>
@@ -97,9 +97,9 @@
                             value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><input
                             type="hidden" name="run_token" value="{{$.RunToken}}"><button class="run-button">Run
                             now</button></form>
-                    <form hx-boost="false" method="post" action="/jobs/{{.ID}}/toggle"><input type="hidden" name="csrf"
+                    {{if .Cron}}<form hx-boost="false" method="post" action="/jobs/{{.ID}}/toggle" {{if .Enabled}}data-confirm-disable{{end}}><input type="hidden" name="csrf"
                             value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><button
-                            class="text-button">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></form>
+                            class="text-button">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></form>{{end}}
                 </div>
             </article>{{end}}</div>
         <div class="section-label history-heading" id="activity">
@@ -250,7 +250,7 @@
 <h2>Task defaults</h2>
 <label>Default timezone<select name="timezone">{{range .Timezones}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select><small>Used by new tasks and schedules without a saved timezone. Each task can choose its own.</small></label>
 <label>Default execution timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100" max="600000" step="1" value="{{.AppSettings.TimeoutMS}}" required><small>100–600000 ms. Applies to new runs whose task timeout is blank.</small></label>
-<details class="advanced-options" {{if .Error}}open{{end}}><summary>Advanced options<small>Browser security</small></summary><div class="stack advanced-options-fields"><label class="check"><input type="checkbox" name="cookie_secure" {{if .AppSettings.CookieSecure}}checked{{end}}>Use secure cookies</label><small>Enable when accessing SchedulerSE over HTTPS. Applies immediately to this browser and to future sign-ins.</small></div></details>
+</div><details class="advanced-options" {{if .Error}}open{{end}}><summary>Advanced options<small>Browser security</small></summary><div class="stack advanced-options-fields"><label class="check"><input type="checkbox" name="cookie_secure" {{if .AppSettings.CookieSecure}}checked{{end}}>Use secure cookies</label><small>Enable when accessing SchedulerSE over HTTPS. Applies immediately to this browser and to future sign-ins.</small></div></details>
 <button class="primary">Save settings →</button>
 </form>
 {{else if eq .Page "telegram"}}
@@ -323,8 +323,8 @@
                 <label>Name<input name="name" value="{{.Job.Name}}" maxlength="100" required
                         placeholder="Daily report"></label>
                 <label>Task type<select name="kind"><option value="http" {{if ne .Job.Kind "bash"}}selected{{end}}>HTTP POST</option><option value="bash" {{if eq .Job.Kind "bash"}}selected{{end}}>Bash script</option></select></label>
-                <label>Bash script<textarea name="script" rows="10" maxlength="65536" spellcheck="false">{{.Job.Script}}</textarea><small>For Bash tasks. Runs inside the service container as its user. Exit 0 means success; output is discarded. HTTP fields, retries and fallback apply only to HTTP tasks; leave recovery disabled for scripts.</small></label>
-                <label>Endpoint URL<input name="url" type="url"
+                <label data-task-kind="bash" {{if ne .Job.Kind "bash"}}hidden{{end}}>Bash script<div class="bash-editor"><pre aria-hidden="true"></pre><textarea aria-label="Bash script" wrap="off" autocapitalize="off" autocomplete="off" name="script" rows="10" maxlength="65536" spellcheck="false">{{.Job.Script}}</textarea></div><small> Runs inside the service container as its user. Exit 0 means success; output is discarded.</small></label>
+                <div class="stack" data-task-kind="http" {{if eq .Job.Kind "bash"}}hidden{{end}}><label>Endpoint URL<input name="url" type="url"
                         value="{{.Job.URL}}" placeholder="https://example.com/api/tasks"><small>HTTPS endpoint
                         receiving a POST for each request attempt.</small></label>
                 <label>Authorization header<input name="authorization" type="password" autocomplete="new-password"
@@ -337,15 +337,15 @@
                         spellcheck="false">{{printf "%s" .Job.Body}}</textarea><small>{{if eq .Job.Policy "generic"}}A
                         JSON object. Values keep their original types.{{else}}This saved task has legacy payload
                         validation.{{end}}</small></label>
-                <details class="advanced-options" {{if .Error}}open{{end}}>
-                    <summary>Advanced options<small>Timeout, retries and fallback</small></summary>
+                </div><details class="advanced-options" {{if .Error}}open{{end}}>
+                    <summary>Advanced options<small>Execution timeout and HTTP recovery</small></summary>
                     <div class="stack advanced-options-fields">
                 <label>Execution timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100"
                         max="600000" step="1" value="{{if .Job.TimeoutMS}}{{.Job.TimeoutMS}}{{end}}"
                         placeholder="{{.DefaultTimeoutMS}}"><small>100–600000 ms (up to 10 minutes). Leave blank to use
                         the server default: {{.DefaultTimeoutMS}} ms. Applies to scheduled and manual
                         runs.</small></label>
-                <h2>Retries and fallback</h2><input type="hidden" name="recovery_settings" value="1">
+                <div class="stack" data-task-kind="http" {{if eq .Job.Kind "bash"}}hidden{{end}}><h2>Retries and fallback</h2><input type="hidden" name="recovery_settings" value="1">
                 <label>Retries after failure<input name="retry_count" type="number" min="0" max="5" step="1"
                         value="{{.Job.RetryCount}}"><small>0 disables retries. Up to 5 extra attempts after HTTP 429 or
                         5xx responses. Only retry endpoints that can safely accept repeated POSTs.</small></label>
@@ -370,7 +370,7 @@
                     configured retries and fallback after timeouts, network errors, redirects or unreadable responses.
                     The original POST may already have completed; another attempt can duplicate its effects. Off by
                     default.</small>
-                    </div>
+                    </div></div>
                 </details>
             </section>
             <aside class="panel stack">
@@ -419,10 +419,10 @@
                             value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
                         {{end}}</select><small>Times follow this timezone, including daylight-saving changes. Skipped
                         local times do not run; repeated times may run twice.</small></label>
-                <label class="check"><input type="checkbox" name="enabled" {{if .Job.Enabled}}checked{{end}}>Enable
+                <div class="stack" data-schedule-modes="minutes hourly daily weekly monthly custom" {{if eq .Schedule.Mode "manual"}}hidden{{end}}><label class="check"><input type="checkbox" name="enabled" {{if .Job.Enabled}}checked{{end}}>Enable
                     scheduled runs</label>
                 <p class="muted">Run now works even when scheduled runs are disabled. New automations start disabled.
-                </p>
+                </p></div>
                 <div class="note">Manage Telegram alerts in notification settings.</div><button
                     class="primary">Save automation <span>→</span></button><a class="cancel" href="/">Cancel</a>
             </aside>
@@ -438,6 +438,11 @@
         {{end}}
         <footer>SchedulerSE <span>Less overhead. More peace of mind.</span></footer>
     </main>{{end}}
+<dialog class="confirm-dialog" aria-labelledby="disable-title" aria-describedby="disable-description">
+    <h2 id="disable-title">Disable scheduled runs?</h2>
+    <p id="disable-description" class="muted">Future scheduled runs will stop. You can still run this automation manually or enable it again later.</p>
+    <div class="dialog-actions"><button type="button" class="run-button" data-dialog-cancel autofocus>Keep enabled</button><button type="button" class="primary" data-dialog-confirm>Disable automation</button></div>
+</dialog>
 </body>
 
 </html>

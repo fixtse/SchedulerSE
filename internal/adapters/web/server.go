@@ -564,7 +564,12 @@ func (s *Server) saveJob(w http.ResponseWriter, r *http.Request, csrf string, cr
 			j.FallbackAuth = ""
 		}
 	}
-	j.Enabled = r.PostFormValue("enabled") == "on"
+	if j.Kind == "bash" {
+		j.RetryCount, j.RetryDelayMS = 0, 0
+		j.RetryUncertain = false
+		j.FallbackURL, j.FallbackAuth = "", ""
+	}
+	j.Enabled = j.Cron != "" && r.PostFormValue("enabled") == "on"
 	if auth := r.PostFormValue("authorization"); auth != "" {
 		j.Authorization = auth
 	} else if r.PostFormValue("clear_authorization") == "on" {

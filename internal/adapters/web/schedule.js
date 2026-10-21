@@ -7,10 +7,70 @@ function initializePage(root = document) {
     const update = () => {
       for (const field of root.querySelectorAll('[data-schedule-modes]')) {
         field.hidden = !field.dataset.scheduleModes.split(' ').includes(frequency.value);
+        for (const input of field.querySelectorAll('input, select')) input.disabled = field.hidden;
       }
     };
     frequency.addEventListener('change', update);
     update();
+  }
+
+  const kind = root.querySelector('[name="kind"]');
+  if (kind && !kind.dataset.initialized) {
+    kind.dataset.initialized = 'true';
+    const update = () => {
+      for (const field of root.querySelectorAll('[data-task-kind]')) {
+        field.hidden = field.dataset.taskKind !== kind.value;
+        for (const input of field.querySelectorAll('input, textarea')) input.disabled = field.hidden;
+      }
+    };
+    kind.addEventListener('change', update);
+    update();
+  }
+
+  for (const editor of root.querySelectorAll('.bash-editor')) {
+    if (editor.dataset.initialized) continue;
+    editor.dataset.initialized = 'true';
+    const input = editor.querySelector('textarea');
+    const preview = editor.querySelector('pre');
+    const highlight = () => {
+      const tokens = /#[^\n]*|"(?:\\.|[^"\\])*"|'[^']*'|\$\{[^}]*\}|\$[\w?@#]+|\b(?:if|then|else|elif|fi|for|while|do|done|case|esac|in|function|echo|printf|export|local|return|exit|set|sudo|cd)\b|[|&;<>]+/g;
+      const fragment = document.createDocumentFragment();
+      let end = 0;
+      for (const match of input.value.matchAll(tokens)) {
+        fragment.append(document.createTextNode(input.value.slice(end, match.index)));
+        const token = document.createElement('span');
+        token.className = match[0][0] === '#' ? 'bash-comment' : /^['"]/.test(match[0]) ? 'bash-string' : match[0][0] === '$' ? 'bash-variable' : 'bash-keyword';
+        token.textContent = match[0];
+        fragment.append(token);
+        end = match.index + match[0].length;
+      }
+      fragment.append(document.createTextNode(input.value.slice(end) + '\n'));
+      preview.replaceChildren(fragment);
+    };
+    input.addEventListener('input', highlight);
+    input.addEventListener('scroll', () => {
+      preview.scrollTop = input.scrollTop;
+      preview.scrollLeft = input.scrollLeft;
+    });
+    editor.classList.add('highlighted');
+    highlight();
+  }
+
+  const dialog = document.querySelector('.confirm-dialog');
+  for (const form of root.querySelectorAll('[data-confirm-disable]')) {
+    if (form.dataset.initialized) continue;
+    form.dataset.initialized = 'true';
+    form.addEventListener('submit', event => {
+      if (form.dataset.confirmed) return;
+      event.preventDefault();
+      dialog.querySelector('[data-dialog-confirm]').onclick = () => {
+        form.dataset.confirmed = 'true';
+        dialog.close();
+        form.requestSubmit();
+      };
+      dialog.querySelector('[data-dialog-cancel]').onclick = () => dialog.close();
+      dialog.showModal();
+    });
   }
 
   const delivery = root.querySelector('[name="delivery_mode"]');
