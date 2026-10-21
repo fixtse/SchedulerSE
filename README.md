@@ -7,6 +7,10 @@ automations and Bash scripts. Agents can create reminders, schedule recurring wo
 and start saved automations through the API. Manage everything from an authenticated
 web interface, with execution history and detailed Telegram alerts.
 
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="SchedulerSE dashboard showing scheduled HTTP POST and Bash automations with execution history" width="1100">
+</p>
+
 ## Features
 
 - **HTTP POST automations** — send JSON payloads with optional authorization, task-specific timeouts, retries and a fallback endpoint.
