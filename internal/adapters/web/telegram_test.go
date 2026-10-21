@@ -92,7 +92,7 @@ func TestTelegramSettingsSecretsAndTestDelivery(t *testing.T) {
 	}
 	test.Set("csrf", csrfToken)
 	code, body, response := f.post(t, "/settings/telegram/test", test)
-	if code != 303 || response.Header.Get("Location") != "/settings/telegram?result=sent" || calls.Load() != 1 {
+	if code != 303 || response.Header.Get("Location") != "/settings?tab=telegram&result=sent" || calls.Load() != 1 {
 		t.Fatalf("test delivery failed: %d %s", code, body)
 	}
 	code, _, _ = f.post(t, "/settings/telegram/test", test)

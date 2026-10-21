@@ -395,7 +395,7 @@ func TestAgentSetupGuideIsReadableInSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != 303 || response.Header.Get("Location") != "/settings/agent#setup-guide" {
+	if response.StatusCode != 303 || response.Header.Get("Location") != "/settings?tab=agent#setup-guide" {
 		t.Fatal("old guide URL did not redirect to merged settings page", response.StatusCode, response.Header)
 	}
 }

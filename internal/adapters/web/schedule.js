@@ -28,9 +28,49 @@ function initializePage(root = document) {
   const mcpURL = new URL('/api/agent/v1/mcp', window.location.origin).href;
   for (const input of root.querySelectorAll('[data-mcp-url]')) input.value = mcpURL;
   for (const config of root.querySelectorAll('[data-mcp-config]')) {
-    config.textContent = JSON.stringify({mcpServers: {schedulerse: {
-      url: mcpURL, headers: {Authorization: 'Bearer YOUR_API_TOKEN'}
-    }}}, null, 2);
+    // Use the public address seen by this browser, including HTTPS behind a proxy.
+    config.textContent = config.textContent.replace(
+      JSON.stringify(config.dataset.mcpEndpoint), JSON.stringify(mcpURL));
+    config.dataset.mcpEndpoint = mcpURL;
+  }
+
+  for (const picker of root.querySelectorAll('[data-mcp-client]')) {
+    if (picker.dataset.initialized) continue;
+    picker.dataset.initialized = 'true';
+    const container = picker.closest('.mcp-configuration-body');
+    const update = () => {
+      for (const panel of container.querySelectorAll('[data-mcp-panel]')) {
+        panel.hidden = panel.dataset.mcpPanel !== picker.value;
+      }
+    };
+    container.querySelector('[data-mcp-picker]').hidden = false;
+    picker.addEventListener('change', update);
+    update();
+  }
+
+  for (const button of root.querySelectorAll('[data-copy-config]')) {
+    if (button.dataset.initialized) continue;
+    button.dataset.initialized = 'true';
+    button.hidden = false;
+    button.addEventListener('click', async () => {
+      const panel = button.closest('[data-mcp-panel]');
+      const config = panel.querySelector('[data-mcp-config]');
+      const status = panel.querySelector('.mcp-copy-status');
+      try {
+        await navigator.clipboard.writeText(config.textContent);
+        status.textContent = 'Configuration copied.';
+      } catch {
+        // Clipboard API may be unavailable on self-hosted HTTP installations.
+        const range = document.createRange();
+        range.selectNodeContents(config);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        let copied = false;
+        try { copied = document.execCommand('copy'); } catch { /* Keep selection for manual copy. */ }
+        status.textContent = copied ? 'Configuration copied.' : 'Configuration selected. Press Ctrl+C or ⌘C to copy.';
+      }
+    });
   }
 
   // Keep exported delivery kit metadata aligned with the address in the user's browser.

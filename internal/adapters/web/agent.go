@@ -212,17 +212,23 @@ func (s *Server) agentPage(w http.ResponseWriter, r *http.Request, csrf, user st
 	render(w, 200, view{Page: "agent", Title: "Agent schedules", CSRF: csrf, Username: user, AgentTasks: tasks})
 }
 func (s *Server) agentSettingsPage(w http.ResponseWriter, r *http.Request, csrf, user string) {
-	s.renderAgentSettings(w, 200, csrf, user, "", "", "")
+	s.renderAgentSettings(w, r, 200, csrf, user, "", "", "")
 }
-func (s *Server) renderAgentSettings(w http.ResponseWriter, status int, csrf, user, token, notice, message string) {
+func (s *Server) renderAgentSettings(w http.ResponseWriter, r *http.Request, status int, csrf, user, token, notice, message string) {
 	settings, err := s.Store.AgentSettings()
 	if err != nil {
 		http.Error(w, "Agent settings unavailable", 503)
 		return
 	}
+	origin, err := s.agentServiceOrigin(r)
+	if err != nil {
+		http.Error(w, "Invalid service origin", 400)
+		return
+	}
+	endpoint := origin + "/api/agent/v1/mcp"
 	hasToken, hasAuth := settings.TokenHash != "", settings.WebhookAuth != ""
 	settings.TokenHash, settings.WebhookAuth = "", ""
-	render(w, status, view{Page: "agent-settings", AgentGuide: agentGuide, Title: "Agent API settings", CSRF: csrf, Username: user, AgentSettings: settings, HasAgentToken: hasToken, HasWebhookAuth: hasAuth, NewAgentToken: token, Notice: notice, Error: message})
+	render(w, status, view{Page: "agent-settings", MCPURL: endpoint, MCPClients: mcpClientConfigs(endpoint, token), AgentGuide: agentGuide, Title: "Agent API settings", CSRF: csrf, Username: user, AgentSettings: settings, HasAgentToken: hasToken, HasWebhookAuth: hasAuth, NewAgentToken: token, Notice: notice, Error: message})
 }
 func (s *Server) saveAgentSettings(w http.ResponseWriter, r *http.Request, csrf, user string) {
 	settings, err := s.Store.AgentSettings()
@@ -253,14 +259,14 @@ func (s *Server) saveAgentSettings(w http.ResponseWriter, r *http.Request, csrf,
 		err = errors.New("Webhook URL or authorization header is invalid or too long")
 	}
 	if err != nil {
-		s.renderAgentSettings(w, 400, csrf, user, "", "", err.Error())
+		s.renderAgentSettings(w, r, 400, csrf, user, "", "", err.Error())
 		return
 	}
 	if err = s.Store.SaveAgentConnection(mode, endpoint, auth); err != nil {
 		http.Error(w, "Could not save agent delivery settings", 503)
 		return
 	}
-	s.renderAgentSettings(w, 200, csrf, user, "", "Agent delivery settings saved. Changes apply to future deliveries.", "")
+	s.renderAgentSettings(w, r, 200, csrf, user, "", "Agent delivery settings saved. Changes apply to future deliveries.", "")
 }
 func (s *Server) agentToken(w http.ResponseWriter, r *http.Request, csrf, user string) {
 	token, notice := "", "API token revoked. Existing schedules remain active."
@@ -279,7 +285,7 @@ func (s *Server) agentToken(w http.ResponseWriter, r *http.Request, csrf, user s
 		http.Error(w, "Could not update API token", 503)
 		return
 	}
-	s.renderAgentSettings(w, 200, csrf, user, token, notice, "")
+	s.renderAgentSettings(w, r, 200, csrf, user, token, notice, "")
 }
 
 func (s *Server) serveAgentDelivery(w http.ResponseWriter, r *http.Request) {

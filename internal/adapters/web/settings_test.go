@@ -77,3 +77,21 @@ func TestSecureCookieSettingRequiresHTTPSAndReissuesSession(t *testing.T) {
 		t.Fatal("current session cookie was not updated")
 	}
 }
+
+func TestSettingsTabsShareNavigationAndKeepForms(t *testing.T) {
+	f := fixture(t)
+	f.setup(t)
+	for _, tc := range []struct{ path, selected, action string }{
+		{"/settings", "/settings", "/settings"},
+		{"/settings?tab=telegram", "/settings?tab=telegram", "/settings/telegram"},
+		{"/settings?tab=agent", "/settings?tab=agent", "/settings/agent"},
+	} {
+		code, body := f.get(t, tc.path)
+		if code != 200 || !strings.Contains(body, `aria-label="Settings"`) || !strings.Contains(body, `href="`+tc.selected+`" aria-current="page"`) || !strings.Contains(body, `action="`+tc.action+`"`) {
+			t.Fatalf("settings tab %s lost navigation or its form: %d", tc.path, code)
+		}
+		if strings.Count(body, "<h1>") != 1 || !strings.Contains(body, "<h1>Settings") {
+			t.Fatal("settings must share a single page heading")
+		}
+	}
+}

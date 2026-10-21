@@ -39,17 +39,28 @@ var scheduleJS string
 //go:embed vendor/htmx.min.js
 var htmxJS string
 
+//go:embed logo-full.svg
+var logoFullSVG []byte
+
 //go:embed favicon.svg
 var faviconSVG []byte
+
+//go:embed logo-full.png
+var logoFullPNG []byte
+
+//go:embed logo-mini.png
+var logoMiniPNG []byte
 
 //go:embed favicon.ico
 var faviconICO []byte
 
 var pages = template.Must(template.New("page").Funcs(template.FuncMap{
-	"styleURL":  styleAsset.URL,
-	"scriptURL": scriptAsset.URL,
-	"htmxURL":   htmxAsset.URL,
-	"uiVersion": func() string { return uiAssetVersion },
+	"styleURL":    styleAsset.URL,
+	"logoURL":     logoVectorAsset.URL,
+	"miniLogoURL": logoMiniAsset.URL,
+	"scriptURL":   scriptAsset.URL,
+	"htmxURL":     htmxAsset.URL,
+	"uiVersion":   func() string { return uiAssetVersion },
 }).Parse(pageHTML))
 
 type Server struct {
@@ -85,6 +96,8 @@ type view struct {
 	AgentSettings                        domain.AgentSettings
 	HasAgentToken, HasWebhookAuth        bool
 	NewAgentToken                        string
+	MCPURL                               string
+	MCPClients                           []mcpClientConfig
 	Page, Title, Error, CSRF, Username   string
 	Timezone                             string
 	Jobs                                 []jobView
@@ -181,6 +194,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"ok","schedulerEnabled":true}`))
 		return
 	}
+	for _, asset := range []staticAsset{logoFullAsset, logoMiniAsset, logoVectorAsset} {
+		if r.URL.Path == asset.path {
+			asset.ServeHTTP(w, r)
+			return
+		}
+	}
 	if r.URL.Path == htmxAsset.path {
 		htmxAsset.ServeHTTP(w, r)
 		return
@@ -254,11 +273,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) { s.generalSettings(w, r, csrf, username) })
+	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) { s.settingsPage(w, r, csrf, username) })
 	mux.HandleFunc("POST /settings", func(w http.ResponseWriter, r *http.Request) { s.generalSettings(w, r, csrf, username) })
 	mux.HandleFunc("GET /settings/agent/delivery.zip", s.serveAgentDelivery)
 	mux.HandleFunc("GET /settings/agent/guide", func(w http.ResponseWriter, r *http.Request) {
-		redirect(w, r, "/settings/agent#setup-guide")
+		redirect(w, r, "/settings?tab=agent#setup-guide")
 	})
 	mux.HandleFunc("GET /settings/agent/guide.md", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")

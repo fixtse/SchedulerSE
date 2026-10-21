@@ -67,7 +67,7 @@ func (s *Server) saveTelegram(w http.ResponseWriter, r *http.Request, csrf, user
 		return
 	}
 	s.Reload()
-	redirect(w, r, "/settings/telegram?result=saved")
+	redirect(w, r, "/settings?tab=telegram&result=saved")
 }
 
 func (s *Server) testTelegram(w http.ResponseWriter, r *http.Request) {
@@ -118,5 +118,5 @@ func (s *Server) testTelegram(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not confirm delivery. Check the bot token, chat ID, and bot access to the chat. Check your chat before sending another test; the message may have been delivered. No automatic retry was made.", 502)
 		return
 	}
-	redirect(w, r, "/settings/telegram?result=sent")
+	redirect(w, r, "/settings?tab=telegram&result=sent")
 }

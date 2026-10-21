@@ -22,7 +22,11 @@ var styleAsset = newStaticAsset("/style.css", "text/css; charset=utf-8", stylesh
 var htmxAsset = newStaticAsset("/htmx.js", "text/javascript; charset=utf-8", htmxJS)
 var scriptAsset = newStaticAsset("/schedule.js", "text/javascript; charset=utf-8", scheduleJS)
 
-var uiAssetVersion = digest(styleAsset.version + scriptAsset.version + htmxAsset.version)
+var logoVectorAsset = newStaticAsset("/logo-full.svg", "image/svg+xml", string(logoFullSVG))
+var logoFullAsset = newStaticAsset("/logo-full.png", "image/png", string(logoFullPNG))
+var logoMiniAsset = newStaticAsset("/logo-mini.png", "image/png", string(logoMiniPNG))
+
+var uiAssetVersion = digest(styleAsset.version + scriptAsset.version + htmxAsset.version + logoFullAsset.version + logoMiniAsset.version + logoVectorAsset.version)
 
 func (a staticAsset) URL() string { return a.path + "?v=" + a.version }
 

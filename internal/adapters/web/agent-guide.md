@@ -29,8 +29,10 @@ with bearer headers. For clients accepting an `mcpServers` URL/header configurat
 ```
 
 Replace the URL with your installation address. The settings page displays that
-address and a matching configuration template. Keep the actual token in the client's
-private configuration. The endpoint is stateless; the SDK negotiates protocol
+address and copyable configurations for Codex, Claude Code, Visual Studio Code and
+Cursor under **Add SchedulerSE to your agent → Show configuration**. Generate a
+token in step 1 first: the configuration includes it while it is shown. On later
+visits, replace `YOUR_API_TOKEN` with your saved token. Keep the configuration private. The endpoint is stateless; the SDK negotiates protocol
 versions, and each call returns a JSON response.
 
 Available tools:

@@ -217,7 +217,7 @@ Tasks can override either value. Under **Advanced options**, enable **Use secure
 cookies** when accessing SchedulerSE over HTTPS. Changes apply immediately and are
 saved with your account and task data.
 
-Manage Telegram and agent connections in their own settings pages. Compose uses
+Use the tabs on **Settings** to manage **General** defaults, **Telegram** notifications and **Agent API** connections. Compose uses
 port `8789`, the `schedulerse_state` volume and the published `latest` image.
 For an HTTPS reverse proxy, preserve the original `Host` header and exclude
 `/health` from proxying. Keep credentials and state backups private.

@@ -9,7 +9,7 @@ import (
 
 func TestVersionedAssetsCacheWithoutCachingAccountPages(t *testing.T) {
 	f := fixture(t)
-	for _, asset := range []staticAsset{styleAsset, scriptAsset, htmxAsset} {
+	for _, asset := range []staticAsset{styleAsset, scriptAsset, htmxAsset, logoFullAsset, logoMiniAsset, logoVectorAsset} {
 		req := httptest.NewRequest("GET", asset.URL(), nil)
 		res := httptest.NewRecorder()
 		f.app.ServeHTTP(res, req)

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>{{.Title}} · SchedulerSE</title>
     <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+    <link rel="icon" href="{{miniLogoURL}}" type="image/png" sizes="any">
     <link rel="stylesheet" href="{{styleURL}}">
     <meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true,"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false,"selfRequestsOnly":true,"timeout":15000}'>
     <script src="{{htmxURL}}" defer></script>
@@ -14,9 +14,7 @@
 </head>
 
 <body hx-boost="true" hx-history="false" hx-sync="body:replace" hx-headers='{"X-SchedulerSE-UI":"{{uiVersion}}"}'>
-    <header class="top"><a class="brand" href="/"><span class="mark">s</span> SchedulerSE<span class="brand-note">/
-                control room</span></a>{{if .Username}}<div class="account"><a href="/settings">General settings</a><a href="/settings/agent">Agent API settings</a><a href="/settings/telegram">Telegram
-                settings</a><span>{{.Username}}</span>
+    <header class="top"><a class="brand" href="/"><img class="brand-logo" src="{{logoURL}}" alt="SchedulerSE"></a>{{if .Username}}<div class="account"><a href="/settings">Settings</a><span>{{.Username}}</span>
             <form hx-boost="false" method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button
                     class="text-button">Sign out ↗</button></form>
         </div>{{end}}</header>
@@ -68,6 +66,10 @@
     {{else}}
     <main class="workspace">
 <nav class="workspace-tabs" aria-label="Schedules"><a href="/" {{if eq .Page "dashboard"}}aria-current="page"{{end}}>Your automations</a><a href="/agent" {{if eq .Page "agent"}}aria-current="page"{{end}}>Agent schedules</a></nav>
+        {{if or (eq .Page "settings") (eq .Page "telegram") (eq .Page "agent-settings")}}
+<div class="page-heading settings-heading"><div><p class="eyebrow">YOUR WORKSPACE, YOUR WAY</p><h1>Settings<span class="accent">.</span></h1><p class="muted">Manage your defaults, notifications and agent connections in one place.</p></div></div>
+<nav class="settings-tabs" aria-label="Settings"><a href="/settings" {{if eq .Page "settings"}}aria-current="page"{{end}}>General</a><a href="/settings?tab=telegram" {{if eq .Page "telegram"}}aria-current="page"{{end}}>Telegram</a><a href="/settings?tab=agent" {{if eq .Page "agent-settings"}}aria-current="page"{{end}}>Agent API</a></nav>
+{{end}}
         {{if eq .Page "dashboard"}}
         <div class="page-heading">
             <div>
@@ -187,27 +189,30 @@
             <p>Execution results will appear here. Saving an automation never runs it.</p>
         </div>{{end}}
         {{else if eq .Page "agent"}}
-<div class="page-heading"><div><p class="eyebrow">TIMERS / REMINDERS / TASKS</p><h1>Agent schedules<span class="accent">.</span></h1><p class="muted">Schedules created through the agent API. Latest 200 items · all times UTC.</p></div><a class="primary" href="/settings/agent">Connect an agent →</a></div>
+<div class="page-heading"><div><p class="eyebrow">TIMERS / REMINDERS / TASKS</p><h1>Agent schedules<span class="accent">.</span></h1><p class="muted">Schedules created through the agent API. Latest 200 items · all times UTC.</p></div><a class="primary" href="/settings?tab=agent">Connect an agent →</a></div>
 <div class="jobs">{{range .AgentTasks}}<article class="job-card"><div class="card-top"><span>{{.Kind}}</span><span class="badge">{{.Status}}</span></div><h3>{{.Title}}</h3><p>{{.Message}}</p><dl class="job-meta"><dt>Reference</dt><dd>{{.ID}}</dd><dt>Scheduled time (UTC)</dt><dd>{{.DueUTC}}</dd><dt>Repeat</dt><dd>{{if .IntervalSeconds}}Every {{.IntervalSeconds}} seconds{{else}}Once{{end}}</dd><dt>Last HTTP status</dt><dd>{{if .HTTPStatus}}{{.HTTPStatus}}{{else}}None recorded{{end}}</dd>{{if .LastError}}<dt>Delivery error</dt><dd>{{.LastError}}</dd>{{end}}</dl><details><summary>Agent context</summary><pre class="agent-context">{{printf "%s" .Context}}</pre></details>{{if eq .Status "pending"}}<form hx-boost="false" method="post" action="/agent/{{.ID}}/cancel" class="card-footer"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="text-button">Cancel schedule</button></form>{{end}}</article>{{else}}<div class="empty"><h3>No agent schedules yet</h3><p>Connect your agent through MCP in Agent API settings, then ask it to create a reminder.</p></div>{{end}}</div>
 {{else if eq .Page "agent-settings"}}
-<div class="page-heading agent-heading">
-    <div><p class="eyebrow">SETTINGS / AI AGENTS</p><h1>Connect your agent<span class="accent">.</span></h1><p class="muted">Give your agent reminders, timers and automations.</p></div>
-    <a class="run-button" href="/agent">View agent schedules →</a>
-</div>
 {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
 {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
 <div class="agent-layout">
     <section class="panel agent-onboarding" id="setup-guide" aria-labelledby="agent-setup-title">
         <div class="agent-section-heading"><p class="eyebrow">GET STARTED</p><h2 id="agent-setup-title">Set up your agent</h2><p class="muted">Connect once, then ask your agent to schedule work for you.</p></div>
         <ol class="agent-steps">
-            <li><div class="agent-step-content"><h3>Add SchedulerSE to your agent</h3><p>Add a remote MCP server in your agent’s connection settings using this endpoint.</p><label>MCP server URL<input readonly value="/api/agent/v1/mcp" data-mcp-url autocomplete="off" spellcheck="false"></label><small>Transport: Streamable HTTP. Authentication: Bearer token.</small></div></li>
-            <li id="agent-token"><div class="agent-step-content"><h3>Give your agent an API token</h3>
+            <li id="agent-token"><div class="agent-step-content"><h3>Generate API token</h3>
                 {{if .NewAgentToken}}<p>Save this token in your agent’s private credential input or secret store.</p><div class="agent-token-reveal"><label>Your new API token<input readonly value="{{.NewAgentToken}}" autocomplete="off" spellcheck="false" aria-label="New API token"></label><small>Shown once. Save it before leaving this page.</small></div>
                 {{else if .HasAgentToken}}<p><span class="agent-inline-status"><span class="dot"></span>API token active</span></p><p>Use the token you saved in your agent’s private credential input. Manage an existing token under Advanced options below.</p>
                 {{else}}<p>Create a token and save it in your agent’s private credential input or secret store.</p><form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="generate"><button class="primary">Generate API token →</button></form>{{end}}
                 <small>Tokens grant access to reminders, delivery settings and HTTP POST/Bash automations. Share only with trusted agents.</small>
             </div></li>
-            <li><div class="agent-step-content"><h3>Ask your agent to connect</h3><p>Add the token to the MCP connection’s Authorization header as <code>Bearer &lt;token&gt;</code>, then ask your agent:</p><blockquote class="agent-prompt">Use SchedulerSE to configure reminder delivery and send me a test reminder in one minute.</blockquote><p>Reminder delivery uses a running local bridge or a webhook receiver. Your agent can read the setup guides directly through MCP. Confirm the test reaches your intended conversation.</p></div></li>
+            <li><div class="agent-step-content"><h3>Add SchedulerSE to your agent</h3><p>Add a remote MCP server in your agent’s connection settings using this endpoint.</p><label>MCP server URL<input readonly value="{{.MCPURL}}" data-mcp-url autocomplete="off" spellcheck="false"></label><small>Transport: Streamable HTTP. Authentication: Bearer token.</small>
+                <details class="mcp-configuration" {{if .NewAgentToken}}open{{end}}><summary>Show configuration</summary><div class="mcp-configuration-body">
+                    {{if .NewAgentToken}}<p class="mcp-config-note">Your new token is included. Copy your configuration before leaving this page.</p>{{else if .HasAgentToken}}<p class="mcp-config-note">Replace <code>YOUR_API_TOKEN</code> with your saved token. Saved tokens cannot be shown again.</p>{{else}}<p class="mcp-config-note">Generate your API token in step 1 to include it in these configurations.</p>{{end}}
+                    <label data-mcp-picker hidden>Software<select data-mcp-client>{{range .MCPClients}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+                    {{range .MCPClients}}<section class="mcp-client-panel" data-mcp-panel="{{.ID}}" aria-labelledby="mcp-title-{{.ID}}"><h4 id="mcp-title-{{.ID}}">{{.Name}}</h4><p>{{.Instructions}}</p><pre class="mcp-config-code" id="mcp-config-{{.ID}}" tabindex="0" data-mcp-config data-mcp-endpoint="{{$.MCPURL}}">{{.Config}}</pre><div class="mcp-config-actions"><button type="button" class="run-button" data-copy-config="mcp-config-{{.ID}}" hidden>Copy configuration</button>{{if .DocsURL}}<a href="{{.DocsURL}}" hx-boost="false" target="_blank" rel="noopener noreferrer">Setup documentation ↗</a>{{end}}<span class="mcp-copy-status" role="status" aria-live="polite"></span></div></section>{{end}}
+                    <small>Merge with any existing configuration. Keep configurations containing your token private.</small>
+                </div></details>
+            </div></li>
+            <li><div class="agent-step-content"><h3>Ask your agent to connect</h3><p>Once you have added the configuration to your client, ask your agent:</p><blockquote class="agent-prompt">Use SchedulerSE to configure reminder delivery and send me a test reminder in one minute.</blockquote><p>Reminder delivery uses a running local bridge or a webhook receiver. Your agent can read the setup guides directly through MCP. Confirm the test reaches your intended conversation.</p></div></li>
         </ol>
     </section>
     <aside class="agent-sidebar">
@@ -220,8 +225,7 @@
 </div>
 <div class="agent-resources">
     <details class="panel agent-disclosure"><summary><span>Reminder delivery kit<small>Standalone bridge and setup guides</small></span></summary><div class="agent-disclosure-body stack"><p class="muted">Your agent can fetch bridge files and setup guides through MCP. For a manual installation, download this ZIP and extract it on the agent host. It includes the standalone Python bridge, delivery guides and service address.</p><a class="run-button" hx-boost="false" href="/settings/agent/delivery.zip" data-agent-delivery>Download delivery kit ↓</a></div></details>
-    <details class="panel agent-disclosure" {{if .Error}}open{{end}}><summary><span>Advanced options<small>MCP configuration, delivery and API token management</small></span></summary><div class="agent-disclosure-body">
-        <section class="stack"><h2>MCP client configuration</h2><p class="muted">For MCP clients that accept JSON configuration with URL and header fields, use this template. Store the actual token privately in your client.</p><pre class="guide-reference" data-mcp-config>{"mcpServers":{"schedulerse":{"url":"/api/agent/v1/mcp","headers":{"Authorization":"Bearer YOUR_API_TOKEN"}}}}</pre></section>
+    <details class="panel agent-disclosure" {{if .Error}}open{{end}}><summary><span>Advanced options<small>Delivery and API token management</small></span></summary><div class="agent-disclosure-body">
         <section class="stack agent-token-management"><div><h2>Reminder delivery</h2><p class="muted">Your agent can configure this during setup. Change it here for a custom integration.</p></div>
             <form hx-boost="false" class="stack" method="post" action="/settings/agent"><input type="hidden" name="csrf" value="{{.CSRF}}">
                 <label>Delivery method<select name="delivery_mode"><option value="poll" {{if eq .AgentSettings.DeliveryMode "poll"}}selected{{end}}>Local agent (polling)</option><option value="webhook" {{if eq .AgentSettings.DeliveryMode "webhook"}}selected{{end}}>Webhook</option></select></label>
@@ -241,8 +245,6 @@
     <details class="panel agent-disclosure"><summary><span>API reference<small>Endpoints and examples for custom integrations</small></span></summary><div class="agent-disclosure-body stack"><p class="muted">Use <code>/api/agent/v1</code> with your API token. Your agent can also read this reference through the authenticated API.</p><a class="run-button" hx-boost="false" href="/settings/agent/guide.md">Download Markdown guide ↓</a><pre class="guide-reference">{{.AgentGuide}}</pre></div></details>
 </div>
 {{else if eq .Page "settings"}}
-<a class="back" href="/">← All automations</a>
-<div class="page-heading"><div><p class="eyebrow">SETTINGS / GENERAL</p><h1>General settings<span class="accent">.</span></h1><p class="muted">Defaults for your schedules, executions and browser connection.</p></div></div>
 {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}{{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
 <form hx-boost="false" method="post" action="/settings" class="panel stack general-settings"><input type="hidden" name="csrf" value="{{.CSRF}}">
 <h2>Task defaults</h2>
@@ -252,14 +254,6 @@
 <button class="primary">Save settings →</button>
 </form>
 {{else if eq .Page "telegram"}}
-        <a class="back" href="/">← All automations</a>
-        <div class="page-heading">
-            <div>
-                <p class="eyebrow">SETTINGS / NOTIFICATIONS</p>
-                <h1>Telegram notifications<span class="accent">.</span></h1>
-                <p class="muted">Choose which task events reach your Telegram chat.</p>
-            </div>
-        </div>
         {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
         {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
         <div class="editor">

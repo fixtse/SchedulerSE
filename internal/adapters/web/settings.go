@@ -86,3 +86,15 @@ func requestUsesHTTPS(r *http.Request) bool {
 func (s *Server) renderGeneralSettings(w http.ResponseWriter, status int, csrf, user string, settings domain.AppSettings, message, notice string) {
 	render(w, status, view{Page: "settings", Title: "General settings", CSRF: csrf, Username: user, AppSettings: settings, Timezones: timezoneChoices(settings.Timezone, s.Config.Timezone), Error: message, Notice: notice})
 }
+
+// Settings sections share one URL and navigation, with native links for no-JS clients.
+func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request, csrf, user string) {
+	switch r.URL.Query().Get("tab") {
+	case "telegram":
+		s.telegramPage(w, r, csrf, user)
+	case "agent":
+		s.agentSettingsPage(w, r, csrf, user)
+	default:
+		s.generalSettings(w, r, csrf, user)
+	}
+}
