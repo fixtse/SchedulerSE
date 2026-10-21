@@ -59,7 +59,7 @@ func TestMCPConfigurationInSetupAndTokenShownOnlyOnce(t *testing.T) {
 	tokenStep := strings.Index(page, `<h3>Generate API token</h3>`)
 	addStep := strings.Index(page, `<h3>Add SchedulerSE to your agent</h3>`)
 	showConfig := strings.Index(page, `<summary>Show configuration</summary>`)
-	askStep := strings.Index(page, `<h3>Ask your agent to connect</h3>`)
+	askStep := strings.Index(page, `<h3>Ask for a reminder</h3>`)
 	advanced := strings.Index(page, `<span>Advanced options<small>`)
 	if tokenStep < 0 || addStep < tokenStep || showConfig < addStep || askStep < showConfig || advanced < askStep {
 		t.Fatal("configuration is not in step 2 after token generation")

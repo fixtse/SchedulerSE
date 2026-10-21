@@ -23,7 +23,7 @@ func TestEnhancedNavigationPreservesNormalFormsAndPrivateHistory(t *testing.T) {
 	if !strings.Contains(body, `src="`+htmxAsset.URL()+`"`) {
 		t.Fatal("navigation library not loaded locally with a versioned URL")
 	}
-	meta := regexp.MustCompile(`name="htmx-config" content='([^']+)'`).FindStringSubmatch(body)
+	meta := regexp.MustCompile(`name="htmx-config"\s+content='([^']+)'`).FindStringSubmatch(body)
 	var config struct {
 		HistoryCacheSize       int  `json:"historyCacheSize"`
 		AllowEval              bool `json:"allowEval"`

@@ -58,6 +58,26 @@ handles due reminder delivery and waking the intended agent. Configure that runt
 once and verify an end-to-end reminder. The bridge uses the REST inbox and
 acknowledgement routes described later in this guide.
 
+## Natural reminder requests
+
+Once MCP is connected, users can say “Send me a test reminder in 30 seconds”,
+“Set a timer for 10 seconds”, or “Remind me to check the oven in 20 minutes”.
+They do not need to name SchedulerSE or ask to configure delivery. Respect an
+explicit preference for another service.
+
+On the first request, inspect `get_connection` and prepare missing delivery using
+`get_guide` and `get_delivery_file` within the user's authorized scope. Preserve
+working destinations. Infer the current conversation from trusted host context;
+ask only for missing routing, private credentials or required setup permission.
+Do not claim delivery is ready just because a mode or URL is saved.
+Once delivery is ready, create the requested timer or reminder using the user's
+duration measured from creation (10 seconds means `after_seconds: 10`). Reuse
+that delivery on later requests without repeating setup. A requested test reminder
+can serve as the end-to-end setup check: do not add another test or replace the
+requested duration with a fixed setup delay. Confirm receipt before reporting
+verified delivery, and explain a delivery blocker instead of promising a reminder
+that cannot reach the intended conversation.
+
 ## Set up reminder delivery through MCP
 
 Use `get_delivery_file` to read the files needed for your delivery method:

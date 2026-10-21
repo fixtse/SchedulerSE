@@ -8,15 +8,17 @@
     <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
     <link rel="icon" href="{{miniLogoURL}}" type="image/png" sizes="any">
     <link rel="stylesheet" href="{{styleURL}}">
-    <meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true,"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false,"selfRequestsOnly":true,"timeout":15000}'>
+    <meta name="htmx-config"
+        content='{"historyCacheSize":0,"refreshOnHistoryMiss":true,"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false,"selfRequestsOnly":true,"timeout":15000}'>
     <script src="{{htmxURL}}" defer></script>
     <script src="{{scriptURL}}" defer></script>
 </head>
 
 <body hx-boost="true" hx-history="false" hx-sync="body:replace" hx-headers='{"X-SchedulerSE-UI":"{{uiVersion}}"}'>
-    <header class="top"><a class="brand" href="/"><img class="brand-logo" src="{{logoURL}}" alt="SchedulerSE"></a>{{if .Username}}<div class="account"><a href="/settings">Settings</a><span>{{.Username}}</span>
-            <form hx-boost="false" method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button
-                    class="text-button">Sign out ↗</button></form>
+    <header class="top"><a class="brand" href="/"><img class="brand-logo" src="{{logoURL}}" alt="SchedulerSE"></a>{{if
+        .Username}}<div class="account"><a href="/settings">Settings</a><span>{{.Username}}</span>
+            <form hx-boost="false" method="post" action="/logout"><input type="hidden" name="csrf"
+                    value="{{.CSRF}}"><button class="text-button">Sign out ↗</button></form>
         </div>{{end}}</header>
     {{if or (eq .Page "setup") (eq .Page "login") (eq .Page "forgot-password") (eq .Page "reset-password")}}
     <main class="auth-layout">
@@ -29,20 +31,35 @@
         <section class="auth-card">
             <p class="eyebrow">{{if eq .Page "setup"}}01 / FIRST-TIME SETUP{{else}}WELCOME BACK{{end}}</p>
             <h2>{{.Title}}</h2>
-            <p class="muted">{{if eq .Page "setup"}}Create the administrator account for this installation.{{else if eq .Page "forgot-password"}}Request a reset token in your configured Telegram chat.{{else if eq .Page "reset-password"}}Paste the token from Telegram and choose a new password.{{else}}Sign in to manage your automations.{{end}}</p>
+            <p class="muted">{{if eq .Page "setup"}}Create the administrator account for this installation.{{else if eq
+                .Page "forgot-password"}}Request a reset token in your configured Telegram chat.{{else if eq .Page
+                "reset-password"}}Paste the token from Telegram and choose a new password.{{else}}Sign in to manage your
+                automations.{{end}}</p>
             {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
             {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
             {{if eq .Page "forgot-password"}}
-            <form hx-boost="false" method="post" action="/forgot-password" class="stack"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="primary">Send reset token to Telegram →</button></form>
-            <p><a href="/reset-password">Use a reset token →</a></p><p class="fine">Tokens expire after 10 minutes. Recovery needs an existing bot token and chat saved in Telegram settings.</p><p><a href="/login">← Back to sign in</a></p>
+            <form hx-boost="false" method="post" action="/forgot-password" class="stack"><input type="hidden"
+                    name="csrf" value="{{.CSRF}}"><button class="primary">Send reset token to Telegram →</button></form>
+            <p><a href="/reset-password">Use a reset token →</a></p>
+            <p class="fine">Tokens expire after 10 minutes. Recovery needs an existing bot token and chat saved in
+                Telegram settings.</p>
+            <p><a href="/login">← Back to sign in</a></p>
             {{else if eq .Page "reset-password"}}
-            <form hx-boost="false" method="post" action="/reset-password" class="stack"><input type="hidden" name="csrf" value="{{.CSRF}}">
-            <label>Reset token<input name="reset_token" type="password" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" required maxlength="128"></label>
-            <label>New password<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="72" required></label>
-            <label>Confirm new password<input name="confirm_password" type="password" autocomplete="new-password" minlength="12" maxlength="72" required></label>
-            <button class="primary">Reset password →</button></form><p class="fine">Use 12–72 bytes. Resetting signs out all existing web sessions.</p><p><a href="/forgot-password">Request another token</a> · <a href="/login">Back to sign in</a></p>
+            <form hx-boost="false" method="post" action="/reset-password" class="stack"><input type="hidden" name="csrf"
+                    value="{{.CSRF}}">
+                <label>Reset token<input name="reset_token" type="password" autocomplete="one-time-code"
+                        autocapitalize="off" spellcheck="false" required maxlength="128"></label>
+                <label>New password<input name="password" type="password" autocomplete="new-password" minlength="12"
+                        maxlength="72" required></label>
+                <label>Confirm new password<input name="confirm_password" type="password" autocomplete="new-password"
+                        minlength="12" maxlength="72" required></label>
+                <button class="primary">Reset password →</button>
+            </form>
+            <p class="fine">Use 12–72 bytes. Resetting signs out all existing web sessions.</p>
+            <p><a href="/forgot-password">Request another token</a> · <a href="/login">Back to sign in</a></p>
             {{else}}
-            <form hx-boost="false" method="post" action="/{{.Page}}" class="stack"><input type="hidden" name="csrf" value="{{.CSRF}}">
+            <form hx-boost="false" method="post" action="/{{.Page}}" class="stack"><input type="hidden" name="csrf"
+                    value="{{.CSRF}}">
                 {{if eq .Page "setup"}}<label>Setup token<input name="setup_token" type="password" required
                         autocomplete="off"><small>Retrieve it from your
                         server:<code>docker compose exec schedulerse /app/schedulerse setup-token</code></small></label>{{end}}
@@ -54,22 +71,35 @@
                         password.</small>{{end}}</label>
                 {{if eq .Page "setup"}}<label>Confirm password<input name="confirm_password" type="password" required
                         minlength="12" maxlength="72" autocomplete="new-password"></label>{{end}}
-                {{if eq .Page "login"}}<label class="check"><input type="checkbox" name="remember" {{if .Remember}}checked{{end}}>Stay signed in for 30 days</label>{{end}}
+                {{if eq .Page "login"}}<label class="check"><input type="checkbox" name="remember" {{if
+                        .Remember}}checked{{end}}>Stay signed in for 30 days</label>{{end}}
                 <button class="primary">{{if eq .Page "setup"}}Create account{{else}}Sign in{{end}}
                     <span>→</span></button>
             </form>
             {{if eq .Page "login"}}<p><a href="/forgot-password">Forgot password?</a></p>{{end}}
-            <p class="fine">{{if eq .Page "setup"}}One administrator. No default credentials.{{else}}12-hour sessions, or stay signed in for 30 days.{{end}}</p>
+            <p class="fine">{{if eq .Page "setup"}}One administrator. No default credentials.{{else}}12-hour sessions,
+                or stay signed in for 30 days.{{end}}</p>
             {{end}}
         </section>
     </main>
     {{else}}
     <main class="workspace">
-<nav class="workspace-tabs" aria-label="Schedules"><a href="/" {{if eq .Page "dashboard"}}aria-current="page"{{end}}>Your automations</a><a href="/agent" {{if eq .Page "agent"}}aria-current="page"{{end}}>Agent schedules</a></nav>
+        <nav class="workspace-tabs" aria-label="Schedules"><a href="/" {{if eq .Page "dashboard" }}aria-current="page"
+                {{end}}>Your automations</a><a href="/agent" {{if eq .Page "agent" }}aria-current="page" {{end}}>Agent
+                schedules</a></nav>
         {{if or (eq .Page "settings") (eq .Page "telegram") (eq .Page "agent-settings")}}
-<div class="page-heading settings-heading"><div><p class="eyebrow">YOUR WORKSPACE, YOUR WAY</p><h1>Settings<span class="accent">.</span></h1><p class="muted">Manage your defaults, notifications and agent connections in one place.</p></div></div>
-<nav class="settings-tabs" aria-label="Settings"><a href="/settings" {{if eq .Page "settings"}}aria-current="page"{{end}}>General</a><a href="/settings?tab=telegram" {{if eq .Page "telegram"}}aria-current="page"{{end}}>Telegram</a><a href="/settings?tab=agent" {{if eq .Page "agent-settings"}}aria-current="page"{{end}}>Agent API</a></nav>
-{{end}}
+        <div class="page-heading settings-heading">
+            <div>
+                <p class="eyebrow">YOUR WORKSPACE, YOUR WAY</p>
+                <h1>Settings<span class="accent">.</span></h1>
+                <p class="muted">Manage your defaults, notifications and agent connections in one place.</p>
+            </div>
+        </div>
+        <nav class="settings-tabs" aria-label="Settings"><a href="/settings" {{if eq .Page "settings"
+                }}aria-current="page" {{end}}>General</a><a href="/settings?tab=telegram" {{if eq .Page "telegram"
+                }}aria-current="page" {{end}}>Telegram</a><a href="/settings?tab=agent" {{if eq .Page "agent-settings"
+                }}aria-current="page" {{end}}>Agent API</a></nav>
+        {{end}}
         {{if eq .Page "dashboard"}}
         <div class="page-heading">
             <div>
@@ -85,7 +115,8 @@
         </div>
         <div class="jobs">{{range .Jobs}}<article class="job-card">
                 <div class="card-top"><span class="job-icon">↗</span><span
-                        class="badge {{if .Enabled}}enabled{{end}}">{{if not .Cron}}Manual only{{else if .Enabled}}Enabled{{else}}Disabled{{end}}</span>
+                        class="badge {{if .Enabled}}enabled{{end}}">{{if not .Cron}}Manual only{{else if
+                        .Enabled}}Enabled{{else}}Disabled{{end}}</span>
                 </div>
                 <h3><a href="/jobs/{{.ID}}">{{.Name}}</a></h3>
                 <p class="endpoint">{{if eq .Kind "bash"}}Bash script{{else}}{{.URL}}{{end}}</p>
@@ -97,9 +128,10 @@
                             value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><input
                             type="hidden" name="run_token" value="{{$.RunToken}}"><button class="run-button">Run
                             now</button></form>
-                    {{if .Cron}}<form hx-boost="false" method="post" action="/jobs/{{.ID}}/toggle" {{if .Enabled}}data-confirm-disable{{end}}><input type="hidden" name="csrf"
-                            value="{{$.CSRF}}"><input type="hidden" name="revision" value="{{.Revision}}"><button
-                            class="text-button">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></form>{{end}}
+                    {{if .Cron}}<form hx-boost="false" method="post" action="/jobs/{{.ID}}/toggle" {{if
+                        .Enabled}}data-confirm-disable{{end}}><input type="hidden" name="csrf" value="{{$.CSRF}}"><input
+                            type="hidden" name="revision" value="{{.Revision}}"><button class="text-button">{{if
+                            .Enabled}}Disable{{else}}Enable{{end}}</button></form>{{end}}
                 </div>
             </article>{{end}}</div>
         <div class="section-label history-heading" id="activity">
@@ -189,78 +221,282 @@
             <p>Execution results will appear here. Saving an automation never runs it.</p>
         </div>{{end}}
         {{else if eq .Page "agent"}}
-<div class="page-heading"><div><p class="eyebrow">TIMERS / REMINDERS / TASKS</p><h1>Agent schedules<span class="accent">.</span></h1><p class="muted">Schedules created through the agent API. Latest 200 items · all times UTC.</p></div><a class="primary" href="/settings?tab=agent">Connect an agent →</a></div>
-<div class="jobs">{{range .AgentTasks}}<article class="job-card"><div class="card-top"><span>{{.Kind}}</span><span class="badge">{{.Status}}</span></div><h3>{{.Title}}</h3><p>{{.Message}}</p><dl class="job-meta"><dt>Reference</dt><dd>{{.ID}}</dd><dt>Scheduled time (UTC)</dt><dd>{{.DueUTC}}</dd><dt>Repeat</dt><dd>{{if .IntervalSeconds}}Every {{.IntervalSeconds}} seconds{{else}}Once{{end}}</dd><dt>Last HTTP status</dt><dd>{{if .HTTPStatus}}{{.HTTPStatus}}{{else}}None recorded{{end}}</dd>{{if .LastError}}<dt>Delivery error</dt><dd>{{.LastError}}</dd>{{end}}</dl><details><summary>Agent context</summary><pre class="agent-context">{{printf "%s" .Context}}</pre></details>{{if eq .Status "pending"}}<form hx-boost="false" method="post" action="/agent/{{.ID}}/cancel" class="card-footer"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="text-button">Cancel schedule</button></form>{{end}}</article>{{else}}<div class="empty"><h3>No agent schedules yet</h3><p>Connect your agent through MCP in Agent API settings, then ask it to create a reminder.</p></div>{{end}}</div>
-{{else if eq .Page "agent-settings"}}
-{{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
-{{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
-<div class="agent-layout">
-    <section class="panel agent-onboarding" id="setup-guide" aria-labelledby="agent-setup-title">
-        <div class="agent-section-heading"><p class="eyebrow">GET STARTED</p><h2 id="agent-setup-title">Set up your agent</h2><p class="muted">Connect once, then ask your agent to schedule work for you.</p></div>
-        <ol class="agent-steps">
-            <li id="agent-token"><div class="agent-step-content"><h3>Generate API token</h3>
-                {{if .NewAgentToken}}<p>Save this token in your agent’s private credential input or secret store.</p><div class="agent-token-reveal"><label>Your new API token<input readonly value="{{.NewAgentToken}}" autocomplete="off" spellcheck="false" aria-label="New API token"></label><small>Shown once. Save it before leaving this page.</small></div>
-                {{else if .HasAgentToken}}<p><span class="agent-inline-status"><span class="dot"></span>API token active</span></p><p>Use the token you saved in your agent’s private credential input. Manage an existing token under Advanced options below.</p>
-                {{else}}<p>Create a token and save it in your agent’s private credential input or secret store.</p><form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="generate"><button class="primary">Generate API token →</button></form>{{end}}
-                <small>Tokens grant access to reminders, delivery settings and HTTP POST/Bash automations. Share only with trusted agents.</small>
-            </div></li>
-            <li><div class="agent-step-content"><h3>Add SchedulerSE to your agent</h3><p>Add a remote MCP server in your agent’s connection settings using this endpoint.</p><label>MCP server URL<input readonly value="{{.MCPURL}}" data-mcp-url autocomplete="off" spellcheck="false"></label><small>Transport: Streamable HTTP. Authentication: Bearer token.</small>
-                <details class="mcp-configuration" {{if .NewAgentToken}}open{{end}}><summary>Show configuration</summary><div class="mcp-configuration-body">
-                    {{if .NewAgentToken}}<p class="mcp-config-note">Your new token is included. Copy your configuration before leaving this page.</p>{{else if .HasAgentToken}}<p class="mcp-config-note">Replace <code>YOUR_API_TOKEN</code> with your saved token. Saved tokens cannot be shown again.</p>{{else}}<p class="mcp-config-note">Generate your API token in step 1 to include it in these configurations.</p>{{end}}
-                    <label data-mcp-picker hidden>Software<select data-mcp-client>{{range .MCPClients}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
-                    {{range .MCPClients}}<section class="mcp-client-panel" data-mcp-panel="{{.ID}}" aria-labelledby="mcp-title-{{.ID}}"><h4 id="mcp-title-{{.ID}}">{{.Name}}</h4><p>{{.Instructions}}</p><pre class="mcp-config-code" id="mcp-config-{{.ID}}" tabindex="0" data-mcp-config data-mcp-endpoint="{{$.MCPURL}}">{{.Config}}</pre><div class="mcp-config-actions"><button type="button" class="run-button" data-copy-config="mcp-config-{{.ID}}" hidden>Copy configuration</button>{{if .DocsURL}}<a href="{{.DocsURL}}" hx-boost="false" target="_blank" rel="noopener noreferrer">Setup documentation ↗</a>{{end}}<span class="mcp-copy-status" role="status" aria-live="polite"></span></div></section>{{end}}
-                    <small>Merge with any existing configuration. Keep configurations containing your token private.</small>
-                </div></details>
-            </div></li>
-            <li><div class="agent-step-content"><h3>Ask your agent to connect</h3><p>Once you have added the configuration to your client, ask your agent:</p><blockquote class="agent-prompt">Use SchedulerSE to configure reminder delivery and send me a test reminder in one minute.</blockquote><p>Reminder delivery uses a running local bridge or a webhook receiver. Your agent can read the setup guides directly through MCP. Confirm the test reaches your intended conversation.</p></div></li>
-        </ol>
-    </section>
-    <aside class="agent-sidebar">
-        <section class="panel stack agent-connection" aria-labelledby="agent-status-title"><div><p class="eyebrow">CURRENT SETTINGS</p><h2 id="agent-status-title">Connection overview</h2></div>
-            <dl class="agent-status-list"><div><dt>API access</dt><dd><span class="dot {{if not .HasAgentToken}}amber{{end}}"></span>{{if .HasAgentToken}}Token active{{else}}Token needed{{end}}</dd></div><div><dt>Reminder delivery</dt><dd>{{if eq .AgentSettings.DeliveryMode "webhook"}}Webhook{{else}}Local agent · polling{{end}}</dd></div>{{if eq .AgentSettings.DeliveryMode "webhook"}}<div><dt>Destination</dt><dd>{{if .AgentSettings.WebhookURL}}URL saved{{else}}URL needed{{end}}</dd></div>{{end}}</dl>
-            <p class="agent-status-caption">Saved configuration. Verify a reminder with your agent to confirm delivery.</p>
-        </section>
-        <section class="agent-tips"><h2>Ready for the next task</h2><ul><li>“Remind me to review the report tomorrow.”</li><li>“Run my saved automation now.”</li><li>“Schedule this script every morning.”</li></ul><p>Keep the bridge and agent runtime running for local reminders.</p></section>
-    </aside>
-</div>
-<div class="agent-resources">
-    <details class="panel agent-disclosure"><summary><span>Reminder delivery kit<small>Standalone bridge and setup guides</small></span></summary><div class="agent-disclosure-body stack"><p class="muted">Your agent can fetch bridge files and setup guides through MCP. For a manual installation, download this ZIP and extract it on the agent host. It includes the standalone Python bridge, delivery guides and service address.</p><a class="run-button" hx-boost="false" href="/settings/agent/delivery.zip" data-agent-delivery>Download delivery kit ↓</a></div></details>
-    <details class="panel agent-disclosure" {{if .Error}}open{{end}}><summary><span>Advanced options<small>Delivery and API token management</small></span></summary><div class="agent-disclosure-body">
-        <section class="stack agent-token-management"><div><h2>Reminder delivery</h2><p class="muted">Your agent can configure this during setup. Change it here for a custom integration.</p></div>
-            <form hx-boost="false" class="stack" method="post" action="/settings/agent"><input type="hidden" name="csrf" value="{{.CSRF}}">
-                <label>Delivery method<select name="delivery_mode"><option value="poll" {{if eq .AgentSettings.DeliveryMode "poll"}}selected{{end}}>Local agent (polling)</option><option value="webhook" {{if eq .AgentSettings.DeliveryMode "webhook"}}selected{{end}}>Webhook</option></select></label>
-                <div class="stack" data-webhook-fields><label>Webhook URL<input type="url" name="webhook_url" value="{{.AgentSettings.WebhookURL}}" maxlength="2048" placeholder="https://agent.example.com/hooks/reminder"><small>Use HTTPS outside localhost. Leave blank to pause webhook callbacks.</small></label>
-                <label>Webhook Authorization header<input type="password" name="webhook_authorization" autocomplete="new-password" maxlength="8192" placeholder="{{if .HasWebhookAuth}}Saved header · leave blank to keep{{else}}Bearer your-webhook-secret{{end}}"><small>Use a separate secret verified by the receiver.</small></label>{{if .HasWebhookAuth}}<label class="check"><input type="checkbox" name="clear_webhook_authorization">Remove saved webhook authorization</label>{{end}}</div>
-                <button class="primary">Save delivery settings →</button>
-            </form><small>Delivery settings are shared by this installation. Webhook receivers must accept events within 10 seconds; callbacks are attempted once.</small>
-        </section>
-        {{if .HasAgentToken}}<section class="stack agent-token-management"><div><h2>Manage API token</h2><p class="muted">Replacing or revoking immediately invalidates the current token. Existing schedules remain active.</p></div><div class="agent-token-actions"><form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="generate"><button class="run-button">Replace API token</button></form><form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="revoke"><button class="agent-revoke">Revoke API token</button></form></div></section>{{end}}
-    </div></details>
-    <details class="panel agent-disclosure"><summary><span>Connection help<small>Local agents, Docker and T3 delivery</small></span></summary><div class="agent-disclosure-body agent-help-grid">
-        <section><h3>Local agent</h3><p>Run the bundled Python bridge alongside your agent, with persistent bridge state and the agent’s credentials. The bridge polls for due reminders and invokes the agent.</p></section>
-        <section><h3>Docker</h3><p>On the Compose network, use <code>http://schedulerse:8789</code>. A bridge on the host uses the published service address. Install the agent runtime where the bridge runs.</p></section>
-        <section><h3>T3 conversations</h3><p>Use a reachable native T3 webhook for reminders in a T3 thread. Follow the T3 guide included in the delivery kit.</p></section>
-        <section><h3>A reminder is still pending?</h3><p>Check that the bridge is running, the token is valid and the service is reachable. Download the delivery kit again if the service address changed. Inspect <a href="/agent">Agent schedules</a> for delivery results.</p></section>
-    </div></details>
-    <details class="panel agent-disclosure"><summary><span>API reference<small>Endpoints and examples for custom integrations</small></span></summary><div class="agent-disclosure-body stack"><p class="muted">Use <code>/api/agent/v1</code> with your API token. Your agent can also read this reference through the authenticated API.</p><a class="run-button" hx-boost="false" href="/settings/agent/guide.md">Download Markdown guide ↓</a><pre class="guide-reference">{{.AgentGuide}}</pre></div></details>
-</div>
-{{else if eq .Page "settings"}}
-{{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}{{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
-<form hx-boost="false" method="post" action="/settings" class="panel stack general-settings"><input type="hidden" name="csrf" value="{{.CSRF}}">
-<h2>Task defaults</h2>
-<label>Default timezone<select name="timezone">{{range .Timezones}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select><small>Used by new tasks and schedules without a saved timezone. Each task can choose its own.</small></label>
-<label>Default execution timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100" max="600000" step="1" value="{{.AppSettings.TimeoutMS}}" required><small>100–600000 ms. Applies to new runs whose task timeout is blank.</small></label>
-</div><details class="advanced-options" {{if .Error}}open{{end}}><summary>Advanced options<small>Browser security</small></summary><div class="stack advanced-options-fields"><label class="check"><input type="checkbox" name="cookie_secure" {{if .AppSettings.CookieSecure}}checked{{end}}>Use secure cookies</label><small>Enable when accessing SchedulerSE over HTTPS. Applies immediately to this browser and to future sign-ins.</small></div></details>
-<button class="primary">Save settings →</button>
-</form>
-{{else if eq .Page "telegram"}}
+        <div class="page-heading">
+            <div>
+                <p class="eyebrow">TIMERS / REMINDERS / TASKS</p>
+                <h1>Agent schedules<span class="accent">.</span></h1>
+                <p class="muted">Schedules created through the agent API. Latest 200 items · all times UTC.</p>
+            </div><a class="primary" href="/settings?tab=agent">Connect an agent →</a>
+        </div>
+        <div class="jobs">{{range .AgentTasks}}<article class="job-card">
+                <div class="card-top"><span>{{.Kind}}</span><span class="badge">{{.Status}}</span></div>
+                <h3>{{.Title}}</h3>
+                <p>{{.Message}}</p>
+                <dl class="job-meta">
+                    <dt>Reference</dt>
+                    <dd>{{.ID}}</dd>
+                    <dt>Scheduled time (UTC)</dt>
+                    <dd>{{.DueUTC}}</dd>
+                    <dt>Repeat</dt>
+                    <dd>{{if .IntervalSeconds}}Every {{.IntervalSeconds}} seconds{{else}}Once{{end}}</dd>
+                    <dt>Last HTTP status</dt>
+                    <dd>{{if .HTTPStatus}}{{.HTTPStatus}}{{else}}None recorded{{end}}</dd>{{if .LastError}}<dt>Delivery
+                        error</dt>
+                    <dd>{{.LastError}}</dd>{{end}}
+                </dl>
+                <details>
+                    <summary>Agent context</summary>
+                    <pre class="agent-context">{{printf "%s" .Context}}</pre>
+                </details>{{if eq .Status "pending"}}<form hx-boost="false" method="post" action="/agent/{{.ID}}/cancel"
+                    class="card-footer"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button
+                        class="text-button">Cancel schedule</button></form>{{end}}
+            </article>{{else}}<div class="empty">
+                <h3>No agent schedules yet</h3>
+                <p>Connect your agent through MCP in Agent API settings, then ask it to create a reminder.</p>
+            </div>{{end}}</div>
+        {{else if eq .Page "agent-settings"}}
+        {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+        {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
+        <div class="agent-layout">
+            <section class="panel agent-onboarding" id="setup-guide" aria-labelledby="agent-setup-title">
+                <div class="agent-section-heading">
+                    <p class="eyebrow">GET STARTED</p>
+                    <h2 id="agent-setup-title">Set up your agent</h2>
+                    <p class="muted">Connect once, then ask your agent to schedule work for you.</p>
+                </div>
+                <ol class="agent-steps">
+                    <li id="agent-token">
+                        <div class="agent-step-content">
+                            <h3>Generate API token</h3>
+                            {{if .NewAgentToken}}<p>Save this token in your agent’s private credential input or secret
+                                store.</p>
+                            <div class="agent-token-reveal"><label>Your new API token<input readonly
+                                        value="{{.NewAgentToken}}" autocomplete="off" spellcheck="false"
+                                        aria-label="New API token"></label><small>Shown once. Save it before leaving
+                                    this page.</small></div>
+                            {{else if .HasAgentToken}}<p><span class="agent-inline-status"><span class="dot"></span>API
+                                    token active</span></p>
+                            <p>Use the token you saved in your agent’s private credential input. Manage an existing
+                                token under Advanced options below.</p>
+                            {{else}}<p>Create a token and save it in your agent’s private credential input or secret
+                                store.</p>
+                            <form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden"
+                                    name="csrf" value="{{.CSRF}}"><input type="hidden" name="action"
+                                    value="generate"><button class="primary">Generate API token →</button></form>{{end}}
+                            <small>Tokens grant access to reminders, delivery settings and HTTP POST/Bash automations.
+                                Share only with trusted agents.</small>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="agent-step-content">
+                            <h3>Add SchedulerSE to your agent</h3>
+                            <p>Add a remote MCP server in your agent’s connection settings using this endpoint.</p>
+                            <label>MCP server URL<input readonly value="{{.MCPURL}}" data-mcp-url autocomplete="off"
+                                    spellcheck="false"></label><small>Transport: Streamable HTTP. Authentication: Bearer
+                                token.</small>
+                            <details class="mcp-configuration" {{if .NewAgentToken}}open{{end}}>
+                                <summary>Show configuration</summary>
+                                <div class="mcp-configuration-body">
+                                    {{if .NewAgentToken}}<p class="mcp-config-note">Your new token is included. Copy
+                                        your configuration before leaving this page.</p>{{else if .HasAgentToken}}<p
+                                        class="mcp-config-note">Replace <code>YOUR_API_TOKEN</code> with your saved
+                                        token. Saved tokens cannot be shown again.</p>{{else}}<p
+                                        class="mcp-config-note">Generate your API token in step 1 to include it in these
+                                        configurations.</p>{{end}}
+                                    <label data-mcp-picker hidden>Software<select data-mcp-client>{{range .MCPClients}}
+                                            <option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+                                    {{range .MCPClients}}<section class="mcp-client-panel" data-mcp-panel="{{.ID}}"
+                                        aria-labelledby="mcp-title-{{.ID}}">
+                                        <h4 id="mcp-title-{{.ID}}">{{.Name}}</h4>
+                                        <p>{{.Instructions}}</p>
+                                        <pre class="mcp-config-code" id="mcp-config-{{.ID}}" tabindex="0"
+                                            data-mcp-config data-mcp-endpoint="{{$.MCPURL}}">{{.Config}}</pre>
+                                        <div class="mcp-config-actions"><button type="button" class="run-button"
+                                                data-copy-config="mcp-config-{{.ID}}" hidden>Copy
+                                                configuration</button>{{if .DocsURL}}<a href="{{.DocsURL}}"
+                                                hx-boost="false" target="_blank" rel="noopener noreferrer">Setup
+                                                documentation ↗</a>{{end}}<span class="mcp-copy-status" role="status"
+                                                aria-live="polite"></span></div>
+                                    </section>{{end}}
+                                    <small>Merge with any existing configuration. Keep configurations containing your
+                                        token private.</small>
+                                </div>
+                            </details>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="agent-step-content">
+                            <h3>Ask for a reminder</h3>
+                            <p>Once you have added the configuration to your client, ask your agent:</p>
+                            <blockquote class="agent-prompt">Send me a test reminder in 30 seconds.</blockquote>
+                            <p>You can also say “Set a timer for 10 seconds” or “Remind me to check the oven in 20 minutes.”
+                                No need to mention SchedulerSE. Your agent can check delivery and read the setup guides
+                                through MCP the first time. Confirm the reminder reaches this conversation.</p>
+                        </div>
+                    </li>
+                </ol>
+            </section>
+            <aside class="agent-sidebar">
+                <section class="panel stack agent-connection" aria-labelledby="agent-status-title">
+                    <div>
+                        <p class="eyebrow">CURRENT SETTINGS</p>
+                        <h2 id="agent-status-title">Connection overview</h2>
+                    </div>
+                    <dl class="agent-status-list">
+                        <div>
+                            <dt>API access</dt>
+                            <dd><span class="dot {{if not .HasAgentToken}}amber{{end}}"></span>{{if
+                                .HasAgentToken}}Token active{{else}}Token needed{{end}}</dd>
+                        </div>
+                        <div>
+                            <dt>Reminder delivery</dt>
+                            <dd>{{if eq .AgentSettings.DeliveryMode "poll"}}Local agent · polling{{else if and (eq .AgentSettings.DeliveryMode "webhook") .AgentSettings.WebhookURL}}Webhook{{else}}Configuration needed{{end}}</dd>
+                        </div>{{if and (eq .AgentSettings.DeliveryMode "webhook") .AgentSettings.WebhookURL}}<div>
+                            <dt>Destination</dt>
+                            <dd>URL saved</dd>
+                        </div>{{end}}
+                    </dl>
+                    <p class="agent-status-caption">Saved configuration. Verify a reminder with your agent to confirm
+                        delivery.</p>
+                </section>
+                <section class="agent-tips">
+                    <h2>Ready for the next task</h2>
+                    <ul>
+                        <li>“Remind me to review the report tomorrow.”</li>
+                        <li>“Run my saved automation now.”</li>
+                        <li>“Schedule this script every morning.”</li>
+                    </ul>
+                    <p>Keep the bridge and agent runtime running for local reminders.</p>
+                </section>
+            </aside>
+        </div>
+        <div class="agent-resources">
+            <details class="panel agent-disclosure">
+                <summary><span>Reminder delivery kit<small>Standalone bridge and setup guides</small></span></summary>
+                <div class="agent-disclosure-body stack">
+                    <p class="muted">Your agent can fetch bridge files and setup guides through MCP. For a manual
+                        installation, download this ZIP and extract it on the agent host. It includes the standalone
+                        Python bridge, delivery guides and service address.</p><a class="run-button" hx-boost="false"
+                        href="/settings/agent/delivery.zip" data-agent-delivery>Download delivery kit ↓</a>
+                </div>
+            </details>
+            <details class="panel agent-disclosure" {{if .Error}}open{{end}}>
+                <summary><span>Advanced options<small>Delivery and API token management</small></span></summary>
+                <div class="agent-disclosure-body">
+                    <div>
+                        <h2>Reminder delivery</h2>
+                        <p class="muted">Your agent can configure this during setup. Change it here for a custom
+                            integration.</p>
+                    </div>
+                    <form hx-boost="false" class="stack" method="post" action="/settings/agent"><input type="hidden"
+                            name="csrf" value="{{.CSRF}}">
+                        <label>Delivery method<select name="delivery_mode">
+                                <option value="poll" {{if eq .AgentSettings.DeliveryMode "poll" }}selected{{end}}>Local
+                                    agent (polling)</option>
+                                <option value="webhook" {{if eq .AgentSettings.DeliveryMode "webhook" }}selected{{end}}>
+                                    Webhook</option>
+                            </select></label>
+                        <div class="stack" data-webhook-fields><label>Webhook URL<input type="url" name="webhook_url"
+                                    value="{{.AgentSettings.WebhookURL}}" maxlength="2048"
+                                    placeholder="https://agent.example.com/hooks/reminder"><small>Use HTTPS outside
+                                    localhost. Leave blank to pause webhook callbacks.</small></label>
+                            <label>Webhook Authorization header<input type="password" name="webhook_authorization"
+                                    autocomplete="new-password" maxlength="8192"
+                                    placeholder="{{if .HasWebhookAuth}}Saved header · leave blank to keep{{else}}Bearer your-webhook-secret{{end}}"><small>Use
+                                    a separate secret verified by the receiver.</small></label>{{if
+                            .HasWebhookAuth}}<label class="check"><input type="checkbox"
+                                    name="clear_webhook_authorization">Remove saved webhook authorization</label>{{end}}
+                        </div>
+                        <button class="primary">Save delivery settings →</button>
+                    </form><small>Delivery settings are shared by this installation. Webhook receivers must accept
+                        events within 10 seconds; callbacks are attempted once.</small>
+
+                    {{if .HasAgentToken}}<section class="stack agent-token-management">
+                        <div>
+                            <h2>Manage API token</h2>
+                            <p class="muted">Replacing or revoking immediately invalidates the current token. Existing
+                                schedules remain active.</p>
+                        </div>
+                        <div class="agent-token-actions">
+                            <form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden"
+                                    name="csrf" value="{{.CSRF}}"><input type="hidden" name="action"
+                                    value="generate"><button class="run-button">Replace API token</button></form>
+                            <form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden"
+                                    name="csrf" value="{{.CSRF}}"><input type="hidden" name="action"
+                                    value="revoke"><button class="agent-revoke">Revoke API token</button></form>
+                        </div>
+                    </section>{{end}}
+                </div>
+            </details>
+            <details class="panel agent-disclosure">
+                <summary><span>Connection help<small>Local agents, Docker and T3 delivery</small></span></summary>
+                <div class="agent-disclosure-body agent-help-grid">
+                    <section>
+                        <h3>Local agent</h3>
+                        <p>Run the bundled Python bridge alongside your agent, with persistent bridge state and the
+                            agent’s credentials. The bridge polls for due reminders and invokes the agent.</p>
+                    </section>
+                    <section>
+                        <h3>Docker</h3>
+                        <p>On the Compose network, use <code>http://schedulerse:8789</code>. A bridge on the host uses
+                            the published service address. Install the agent runtime where the bridge runs.</p>
+                    </section>
+                    <section>
+                        <h3>T3 conversations</h3>
+                        <p>Use a reachable native T3 webhook for reminders in a T3 thread. Follow the T3 guide included
+                            in the delivery kit.</p>
+                    </section>
+                    <section>
+                        <h3>A reminder is still pending?</h3>
+                        <p>Check that the bridge is running, the token is valid and the service is reachable. Download
+                            the delivery kit again if the service address changed. Inspect <a href="/agent">Agent
+                                schedules</a> for delivery results.</p>
+                    </section>
+                </div>
+            </details>
+            <details class="panel agent-disclosure">
+                <summary><span>API reference<small>Endpoints and examples for custom integrations</small></span>
+                </summary>
+                <div class="agent-disclosure-body stack">
+                    <p class="muted">Use <code>/api/agent/v1</code> with your API token. Your agent can also read this
+                        reference through the authenticated API.</p><a class="run-button" hx-boost="false"
+                        href="/settings/agent/guide.md">Download Markdown guide ↓</a>
+                    <pre class="guide-reference">{{.AgentGuide}}</pre>
+                </div>
+            </details>
+        </div>
+        {{else if eq .Page "settings"}}
+        {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}{{if .Notice}}<div class="notice"
+            role="status">{{.Notice}}</div>{{end}}
+        <form hx-boost="false" method="post" action="/settings" class="panel stack general-settings"><input
+                type="hidden" name="csrf" value="{{.CSRF}}">
+            <h2>Task defaults</h2>
+            <label>Default timezone<select name="timezone">{{range .Timezones}}<option value="{{.Value}}" {{if
+                        .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select><small>Used by new tasks and
+                    schedules without a saved timezone. Each task can choose its own.</small></label>
+            <label>Default execution timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100"
+                    max="600000" step="1" value="{{.AppSettings.TimeoutMS}}" required><small>100–600000 ms. Applies to
+                    new runs whose task timeout is blank.</small></label>
+            </div>
+            <details class="advanced-options" {{if .Error}}open{{end}}>
+                <summary>Advanced options<small>Browser security</small></summary>
+                <div class="stack advanced-options-fields"><label class="check"><input type="checkbox"
+                            name="cookie_secure" {{if .AppSettings.CookieSecure}}checked{{end}}>Use secure
+                        cookies</label><small>Enable when accessing SchedulerSE over HTTPS. Applies immediately to this
+                        browser and to future sign-ins.</small></div>
+            </details>
+            <button class="primary">Save settings →</button>
+        </form>
+        {{else if eq .Page "telegram"}}
         {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
         {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
         <div class="editor">
             <form hx-boost="false" method="post" action="/settings/telegram" class="panel stack">
                 <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision"
                     value="{{.Telegram.Revision}}">
-                <h2>Connection</h2><p class="muted">This chat also receives password-reset tokens, even when routine notifications are disabled. Use a chat whose members you trust with account recovery.</p>
+                <h2>Connection</h2>
+                <p class="muted">This chat also receives password-reset tokens, even when routine notifications are
+                    disabled. Use a chat whose members you trust with account recovery.</p>
                 <label>Bot token<input name="bot_token" type="password" autocomplete="new-password" maxlength="256"
                         placeholder="{{if .HasBotToken}}Saved token · leave blank to keep{{else}}123456789:…{{end}}"><small>Create
                         a bot with @BotFather in Telegram and paste its token here. Saved tokens are never
@@ -312,8 +548,8 @@
             </div>
         </div>
         {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
-        <form hx-boost="false" method="post" action="{{if .New}}/jobs/new{{else}}/jobs/{{.Job.ID}}{{end}}" class="editor"><input
-                type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision"
+        <form hx-boost="false" method="post" action="{{if .New}}/jobs/new{{else}}/jobs/{{.Job.ID}}{{end}}"
+            class="editor"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="revision"
                 value="{{.Job.Revision}}">
             <section class="panel stack">
                 <h2>The basics</h2>{{if .New}}<label>Unique ID<input name="id" value="{{.Job.ID}}"
@@ -322,55 +558,82 @@
                         later.</small></label>{{end}}
                 <label>Name<input name="name" value="{{.Job.Name}}" maxlength="100" required
                         placeholder="Daily report"></label>
-                <label>Task type<select name="kind"><option value="http" {{if ne .Job.Kind "bash"}}selected{{end}}>HTTP POST</option><option value="bash" {{if eq .Job.Kind "bash"}}selected{{end}}>Bash script</option></select></label>
-                <label data-task-kind="bash" {{if ne .Job.Kind "bash"}}hidden{{end}}>Bash script<div class="bash-editor"><pre aria-hidden="true"></pre><textarea aria-label="Bash script" wrap="off" autocapitalize="off" autocomplete="off" name="script" rows="10" maxlength="65536" spellcheck="false">{{.Job.Script}}</textarea></div><small> Runs inside the service container as its user. Exit 0 means success; output is discarded.</small></label>
-                <div class="stack" data-task-kind="http" {{if eq .Job.Kind "bash"}}hidden{{end}}><label>Endpoint URL<input name="url" type="url"
-                        value="{{.Job.URL}}" placeholder="https://example.com/api/tasks"><small>HTTPS endpoint
-                        receiving a POST for each request attempt.</small></label>
-                <label>Authorization header<input name="authorization" type="password" autocomplete="new-password"
-                        maxlength="8192"
-                        placeholder="{{if .HasAuthorization}}Stored header · leave blank to keep{{else}}Bearer … (optional){{end}}"><small>Enter
-                        the full header value. Stored values are never displayed.</small></label>{{if
-                .HasAuthorization}}<label class="check"><input type="checkbox" name="clear_authorization">Remove the
-                    stored authorization header</label>{{end}}
-                <label>JSON body<textarea name="body" rows="6"
-                        spellcheck="false">{{printf "%s" .Job.Body}}</textarea><small>{{if eq .Job.Policy "generic"}}A
-                        JSON object. Values keep their original types.{{else}}This saved task has legacy payload
-                        validation.{{end}}</small></label>
-                </div><details class="advanced-options" {{if .Error}}open{{end}}>
+                <label>Task type<select name="kind">
+                        <option value="http" {{if ne .Job.Kind "bash" }}selected{{end}}>HTTP POST</option>
+                        <option value="bash" {{if eq .Job.Kind "bash" }}selected{{end}}>Bash script</option>
+                    </select></label>
+                <label data-task-kind="bash" {{if ne .Job.Kind "bash" }}hidden{{end}}>Bash script<div
+                        class="bash-editor">
+                        <pre aria-hidden="true"></pre><textarea aria-label="Bash script" wrap="off" autocapitalize="off"
+                            autocomplete="off" name="script" rows="10" maxlength="65536"
+                            spellcheck="false">{{.Job.Script}}</textarea>
+                    </div><button type="button" class="run-button" data-bash-example hidden>Fill curl example</button>
+                    <small>Replace the example URL and JSON body before running. Runs inside the service container as its user.
+                        Exit 0 means success; output is discarded.</small></label>
+                <div class="stack" data-task-kind="http" {{if eq .Job.Kind "bash" }}hidden{{end}}><label>Endpoint
+                        URL<input name="url" type="url" value="{{.Job.URL}}"
+                            placeholder="https://example.com/api/tasks"><small>HTTPS endpoint
+                            receiving a POST for each request attempt.</small></label>
+                    <label>Authorization header<input name="authorization" type="password" autocomplete="new-password"
+                            maxlength="8192"
+                            placeholder="{{if .HasAuthorization}}Stored header · leave blank to keep{{else}}Bearer … (optional){{end}}"><small>Enter
+                            the full header value. Stored values are never displayed.</small></label>{{if
+                    .HasAuthorization}}<label class="check"><input type="checkbox" name="clear_authorization">Remove the
+                        stored authorization header</label>{{end}}
+                    <label>JSON body<textarea name="body" rows="6"
+                            spellcheck="false">{{printf "%s" .Job.Body}}</textarea><small>{{if eq .Job.Policy
+                            "generic"}}A
+                            JSON object. Values keep their original types.{{else}}This saved task has legacy payload
+                            validation.{{end}}</small></label>
+                </div>
+                <details class="advanced-options" {{if .Error}}open{{end}}>
                     <summary>Advanced options<small>Execution timeout and HTTP recovery</small></summary>
                     <div class="stack advanced-options-fields">
-                <label>Execution timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100"
-                        max="600000" step="1" value="{{if .Job.TimeoutMS}}{{.Job.TimeoutMS}}{{end}}"
-                        placeholder="{{.DefaultTimeoutMS}}"><small>100–600000 ms (up to 10 minutes). Leave blank to use
-                        the server default: {{.DefaultTimeoutMS}} ms. Applies to scheduled and manual
-                        runs.</small></label>
-                <div class="stack" data-task-kind="http" {{if eq .Job.Kind "bash"}}hidden{{end}}><h2>Retries and fallback</h2><input type="hidden" name="recovery_settings" value="1">
-                <label>Retries after failure<input name="retry_count" type="number" min="0" max="5" step="1"
-                        value="{{.Job.RetryCount}}"><small>0 disables retries. Up to 5 extra attempts after HTTP 429 or
-                        5xx responses. Only retry endpoints that can safely accept repeated POSTs.</small></label>
-                <label>Delay between retries (milliseconds)<input name="retry_delay_ms" type="number" min="100"
-                        max="60000" step="1" value="{{if .Job.RetryDelayMS}}{{.Job.RetryDelayMS}}{{end}}"
-                        placeholder="1000"><small>Fixed delay of 100–60000 ms. Blank uses 1000 ms. The request timeout
-                        applies separately to each attempt.</small></label>
-                <label>Fallback endpoint URL<input name="fallback_url" type="url" value="{{.Job.FallbackURL}}"
-                        placeholder="https://backup.example.com/api/tasks"><small>Optional. After eligible primary
-                        failures and any retries, send the same JSON body here once. Any HTTP 4xx/5xx failure can
-                        trigger fallback. Leave blank to disable.</small></label>
-                <label>Fallback authorization header<input name="fallback_authorization" type="password"
-                        autocomplete="new-password" maxlength="8192"
-                        placeholder="{{if .HasFallbackAuth}}Stored header · leave blank to keep{{else}}Optional separate authorization{{end}}"><small>The
-                        primary authorization header is never copied to the fallback endpoint. Stored values are never
-                        displayed.</small></label>
-                {{if .HasFallbackAuth}}<label class="check"><input type="checkbox"
-                        name="clear_fallback_authorization">Remove the stored fallback authorization
-                    header</label>{{end}}
-                <label class="check"><input type="checkbox" name="retry_uncertain" {{if
-                        .Job.RetryUncertain}}checked{{end}}>Also recover after uncertain results</label><small>Allows
-                    configured retries and fallback after timeouts, network errors, redirects or unreadable responses.
-                    The original POST may already have completed; another attempt can duplicate its effects. Off by
-                    default.</small>
-                    </div></div>
+                        <label>Execution timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100"
+                                max="600000" step="1" value="{{if .Job.TimeoutMS}}{{.Job.TimeoutMS}}{{end}}"
+                                placeholder="{{.DefaultTimeoutMS}}"><small>100–600000 ms (up to 10 minutes). Leave blank
+                                to use
+                                the server default: {{.DefaultTimeoutMS}} ms. Applies to scheduled and manual
+                                runs.</small></label>
+                        <div class="stack" data-task-kind="http" {{if eq .Job.Kind "bash" }}hidden{{end}}>
+                            <h2>Retries and fallback</h2><input type="hidden" name="recovery_settings" value="1">
+                            <label>Retries after failure<input name="retry_count" type="number" min="0" max="5" step="1"
+                                    value="{{.Job.RetryCount}}"><small>0 disables retries. Up to 5 extra attempts after
+                                    HTTP 429 or
+                                    5xx responses. Only retry endpoints that can safely accept repeated
+                                    POSTs.</small></label>
+                            <label>Delay between retries (milliseconds)<input name="retry_delay_ms" type="number"
+                                    min="100" max="60000" step="1"
+                                    value="{{if .Job.RetryDelayMS}}{{.Job.RetryDelayMS}}{{end}}"
+                                    placeholder="1000"><small>Fixed delay of 100–60000 ms. Blank uses 1000 ms. The
+                                    request timeout
+                                    applies separately to each attempt.</small></label>
+                            <label>Fallback endpoint URL<input name="fallback_url" type="url"
+                                    value="{{.Job.FallbackURL}}"
+                                    placeholder="https://backup.example.com/api/tasks"><small>Optional. After eligible
+                                    primary
+                                    failures and any retries, send the same JSON body here once. Any HTTP 4xx/5xx
+                                    failure can
+                                    trigger fallback. Leave blank to disable.</small></label>
+                            <label>Fallback authorization header<input name="fallback_authorization" type="password"
+                                    autocomplete="new-password" maxlength="8192"
+                                    placeholder="{{if .HasFallbackAuth}}Stored header · leave blank to keep{{else}}Optional separate authorization{{end}}"><small>The
+                                    primary authorization header is never copied to the fallback endpoint. Stored values
+                                    are never
+                                    displayed.</small></label>
+                            {{if .HasFallbackAuth}}<label class="check"><input type="checkbox"
+                                    name="clear_fallback_authorization">Remove the stored fallback authorization
+                                header</label>{{end}}
+                            <label class="check"><input type="checkbox" name="retry_uncertain" {{if
+                                    .Job.RetryUncertain}}checked{{end}}>Also recover after uncertain
+                                results</label><small>Allows
+                                configured retries and fallback after timeouts, network errors, redirects or unreadable
+                                responses.
+                                The original POST may already have completed; another attempt can duplicate its effects.
+                                Off by
+                                default.</small>
+                        </div>
+                    </div>
                 </details>
             </section>
             <aside class="panel stack">
@@ -419,30 +682,38 @@
                             value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
                         {{end}}</select><small>Times follow this timezone, including daylight-saving changes. Skipped
                         local times do not run; repeated times may run twice.</small></label>
-                <div class="stack" data-schedule-modes="minutes hourly daily weekly monthly custom" {{if eq .Schedule.Mode "manual"}}hidden{{end}}><label class="check"><input type="checkbox" name="enabled" {{if .Job.Enabled}}checked{{end}}>Enable
-                    scheduled runs</label>
-                <p class="muted">Run now works even when scheduled runs are disabled. New automations start disabled.
-                </p></div>
-                <div class="note">Manage Telegram alerts in notification settings.</div><button
-                    class="primary">Save automation <span>→</span></button><a class="cancel" href="/">Cancel</a>
+                <div class="stack" data-schedule-modes="minutes hourly daily weekly monthly custom" {{if eq
+                    .Schedule.Mode "manual" }}hidden{{end}}><label class="check"><input type="checkbox" name="enabled"
+                            {{if .Job.Enabled}}checked{{end}}>Enable
+                        scheduled runs</label>
+                    <p class="muted">Run now works even when scheduled runs are disabled. New automations start
+                        disabled.
+                    </p>
+                </div>
+                <div class="note">Manage Telegram alerts in notification settings.</div><button class="primary">Save
+                    automation <span>→</span></button><a class="cancel" href="/">Cancel</a>
             </aside>
         </form>
         {{if not .New}}<section class="manual-run panel">
             <h2>Run this task now</h2>
             <p class="muted">Starts one execution using the saved retry and fallback settings, even when scheduled runs
                 for this task are disabled. Save any changes first. Results appear in recent activity.</p>
-            <form hx-boost="false" method="post" action="/jobs/{{.Job.ID}}/run"><input type="hidden" name="csrf" value="{{.CSRF}}"><input
-                    type="hidden" name="revision" value="{{.Job.Revision}}"><input type="hidden" name="run_token"
-                    value="{{.RunToken}}"><button class="run-button">Run now</button></form>
+            <form hx-boost="false" method="post" action="/jobs/{{.Job.ID}}/run"><input type="hidden" name="csrf"
+                    value="{{.CSRF}}"><input type="hidden" name="revision" value="{{.Job.Revision}}"><input
+                    type="hidden" name="run_token" value="{{.RunToken}}"><button class="run-button">Run now</button>
+            </form>
         </section>{{end}}
         {{end}}
         <footer>SchedulerSE <span>Less overhead. More peace of mind.</span></footer>
     </main>{{end}}
-<dialog class="confirm-dialog" aria-labelledby="disable-title" aria-describedby="disable-description">
-    <h2 id="disable-title">Disable scheduled runs?</h2>
-    <p id="disable-description" class="muted">Future scheduled runs will stop. You can still run this automation manually or enable it again later.</p>
-    <div class="dialog-actions"><button type="button" class="run-button" data-dialog-cancel autofocus>Keep enabled</button><button type="button" class="primary" data-dialog-confirm>Disable automation</button></div>
-</dialog>
+    <dialog class="confirm-dialog" aria-labelledby="disable-title" aria-describedby="disable-description">
+        <h2 id="disable-title">Disable scheduled runs?</h2>
+        <p id="disable-description" class="muted">Future scheduled runs will stop. You can still run this automation
+            manually or enable it again later.</p>
+        <div class="dialog-actions"><button type="button" class="run-button" data-dialog-cancel autofocus>Keep
+                enabled</button><button type="button" class="primary" data-dialog-confirm>Disable automation</button>
+        </div>
+    </dialog>
 </body>
 
 </html>

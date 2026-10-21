@@ -6,6 +6,26 @@ remains available for agents without MCP support. Reminders need a running local
 bridge or webhook receiver to wake the intended agent. Verify an end-to-end reminder
 before reporting setup complete.
 
+## Natural reminder requests
+
+Once MCP is connected, users can say “Send me a test reminder in 30 seconds”,
+“Set a timer for 10 seconds”, or “Remind me to check the oven in 20 minutes”.
+They do not need to name SchedulerSE or ask to configure delivery. Respect an
+explicit preference for another service.
+
+On the first request, inspect `get_connection` and prepare missing delivery using
+`get_guide` and `get_delivery_file` within the user's authorized scope. Preserve
+working destinations. Infer the current conversation from trusted host context;
+ask only for missing routing, private credentials or required setup permission.
+Do not claim delivery is ready just because a mode or URL is saved.
+Once delivery is ready, create the requested timer or reminder using the user's
+duration measured from creation (10 seconds means `after_seconds: 10`). Reuse
+that delivery on later requests without repeating setup. A requested test reminder
+can serve as the end-to-end setup check: do not add another test or replace the
+requested duration with a fixed setup delay. Confirm receipt before reporting
+verified delivery, and explain a delivery blocker instead of promising a reminder
+that cannot reach the intended conversation.
+
 ## Connect once
 
 1. Read the adjacent `connection.json` included by the kit download. Its
@@ -35,7 +55,9 @@ before reporting setup complete.
 4. **Optional remote relay:** only when the scheduler cannot reach the agent and
    direct polling is unsuitable, use [references/cloudflare.md](references/cloudflare.md).
    Do not provision public resources or require Cloudflare for a local installation.
-5. Schedule one clearly labelled setup check for 30 seconds from now. Verify the
+5. Use the requested reminder as the setup check when the user asked for one, keeping
+   its requested delay. Otherwise, schedule one clearly labelled setup check for 30
+   seconds from now. Verify the
    intended agent/session actually receives it, then report the connection and its
    runtime dependency. Do not create recurring test reminders. If the intended
    destination is unavailable, state that and keep setup incomplete.

@@ -47,6 +47,26 @@ function initializePage(root = document) {
       fragment.append(document.createTextNode(input.value.slice(end) + '\n'));
       preview.replaceChildren(fragment);
     };
+    const example = editor.parentElement.querySelector('[data-bash-example]');
+    if (example) {
+      example.hidden = false;
+      example.addEventListener('click', () => {
+        input.value = [
+          '#!/usr/bin/env bash',
+          'set -euo pipefail',
+          '',
+          '# Replace this URL and JSON body with your endpoint and payload.',
+          "curl --fail-with-body --silent --show-error --max-time 30 \\",
+          "  --request POST 'https://example.com/api/tasks' \\",
+          "  --header 'Content-Type: application/json' \\",
+          `  --data '{"message":"Hello from SchedulerSE"}'`,
+          ''
+        ].join('\n');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.scrollTop = input.scrollLeft = preview.scrollTop = preview.scrollLeft = 0;
+        input.focus();
+      });
+    }
     input.addEventListener('input', highlight);
     input.addEventListener('scroll', () => {
       preview.scrollTop = input.scrollTop;

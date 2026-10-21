@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-var csrfPattern = regexp.MustCompile(`name="csrf" value="([^"]+)"`)
+var csrfPattern = regexp.MustCompile(`name="csrf"\s+value="([^"]+)"`)
 
 type browserFixture struct {
 	app     *Server

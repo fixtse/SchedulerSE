@@ -20,7 +20,7 @@ FROM alpine:3.24 AS runtime
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/fixtse/SchedulerSE"
 LABEL org.opencontainers.image.description="SchedulerSE: lightweight scheduling with authenticated job management"
-RUN apk add --no-cache ca-certificates bash \
+RUN apk add --no-cache ca-certificates bash curl \
     && addgroup -g 1000 schedulerse && adduser -D -u 1000 -G schedulerse schedulerse \
     && mkdir -p /data /app && chown schedulerse:schedulerse /data
 COPY --from=build /out/schedulerse /app/schedulerse
