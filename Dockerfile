@@ -20,7 +20,13 @@ FROM alpine:3.24 AS runtime
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/fixtse/SchedulerSE"
 LABEL org.opencontainers.image.description="SchedulerSE: lightweight scheduling with authenticated job management"
-RUN apk add --no-cache ca-certificates bash curl \
+# Common tools for user-authored Bash automations (no compiler toolchain).
+RUN apk add --no-cache \
+        ca-certificates bash coreutils findutils grep sed gawk diffutils \
+        curl wget jq openssl \
+        tar gzip bzip2 xz zip unzip \
+        bind-tools iproute2 netcat-openbsd \
+        git openssh-client rsync util-linux \
     && addgroup -g 1000 schedulerse && adduser -D -u 1000 -G schedulerse schedulerse \
     && mkdir -p /data /app && chown schedulerse:schedulerse /data
 COPY --from=build /out/schedulerse /app/schedulerse

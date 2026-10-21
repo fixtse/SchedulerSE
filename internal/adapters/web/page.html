@@ -304,7 +304,8 @@
                                         class="mcp-config-note">Generate your API token in step 1 to include it in these
                                         configurations.</p>{{end}}
                                     <label data-mcp-picker hidden>Software<select data-mcp-client>{{range .MCPClients}}
-                                            <option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+                                            <option value="{{.ID}}">{{.Name}}</option>{{end}}
+                                        </select></label>
                                     {{range .MCPClients}}<section class="mcp-client-panel" data-mcp-panel="{{.ID}}"
                                         aria-labelledby="mcp-title-{{.ID}}">
                                         <h4 id="mcp-title-{{.ID}}">{{.Name}}</h4>
@@ -329,8 +330,9 @@
                             <h3>Ask for a reminder</h3>
                             <p>Once you have added the configuration to your client, ask your agent:</p>
                             <blockquote class="agent-prompt">Send me a test reminder in 30 seconds.</blockquote>
-                            <p>You can also say “Set a timer for 10 seconds” or “Remind me to check the oven in 20 minutes.”
-                                No need to mention SchedulerSE. Your agent can check delivery and read the setup guides
+                            <p>You can also say “Set a timer for 10 seconds” or “Remind me to check the oven in 20
+                                minutes.”
+                                Your agent can check delivery and read the setup guides
                                 through MCP the first time. Confirm the reminder reaches this conversation.</p>
                         </div>
                     </li>
@@ -350,7 +352,9 @@
                         </div>
                         <div>
                             <dt>Reminder delivery</dt>
-                            <dd>{{if eq .AgentSettings.DeliveryMode "poll"}}Local agent · polling{{else if and (eq .AgentSettings.DeliveryMode "webhook") .AgentSettings.WebhookURL}}Webhook{{else}}Configuration needed{{end}}</dd>
+                            <dd>{{if eq .AgentSettings.DeliveryMode "poll"}}Local agent · polling{{else if and (eq
+                                .AgentSettings.DeliveryMode "webhook")
+                                .AgentSettings.WebhookURL}}Webhook{{else}}Configuration needed{{end}}</dd>
                         </div>{{if and (eq .AgentSettings.DeliveryMode "webhook") .AgentSettings.WebhookURL}}<div>
                             <dt>Destination</dt>
                             <dd>URL saved</dd>
@@ -568,8 +572,46 @@
                             autocomplete="off" name="script" rows="10" maxlength="65536"
                             spellcheck="false">{{.Job.Script}}</textarea>
                     </div><button type="button" class="run-button" data-bash-example hidden>Fill curl example</button>
-                    <small>Replace the example URL and JSON body before running. Runs inside the service container as its user.
+                    <small>Replace the example URL and JSON body before running. Runs inside the service container as
+                        its user.
                         Exit 0 means success; output is discarded.</small></label>
+                <details class="advanced-options bash-tools" data-task-kind="bash" {{if ne .Job.Kind "bash"
+                    }}hidden{{end}}>
+                    <summary>Available Bash tools<small>Commands included in the standard container image</small>
+                    </summary>
+                    <dl class="bash-tools-list">
+                        <dt>HTTP &amp; JSON</dt>
+                        <dd><code>curl</code>, <code>wget</code>, <code>jq</code></dd>
+                        <dt>Text processing</dt>
+                        <dd><code>grep</code>, <code>sed</code>, <code>awk</code> / <code>gawk</code>,
+                            <code>sort</code>, <code>uniq</code>, <code>cut</code>, <code>tr</code>, <code>head</code>,
+                            <code>tail</code>, <code>wc</code>, <code>diff</code>, <code>cmp</code>
+                        </dd>
+                        <dt>Files &amp; dates</dt>
+                        <dd>GNU coreutils and findutils, including <code>cat</code>, <code>cp</code>, <code>mv</code>,
+                            <code>rm</code>, <code>mkdir</code>, <code>find</code>, <code>xargs</code>,
+                            <code>date</code>, <code>sleep</code>, <code>timeout</code>, <code>sha256sum</code>,
+                            <code>base64</code>
+                        </dd>
+                        <dt>Archives</dt>
+                        <dd><code>tar</code>, <code>gzip</code>, <code>gunzip</code>, <code>bzip2</code>,
+                            <code>xz</code>, <code>zip</code>, <code>unzip</code>
+                        </dd>
+                        <dt>Networking &amp; TLS</dt>
+                        <dd><code>dig</code>, <code>nslookup</code>, <code>ip</code>, <code>ss</code>, <code>nc</code>,
+                            <code>openssl</code>
+                        </dd>
+                        <dt>Git &amp; remote access</dt>
+                        <dd><code>git</code>, <code>ssh</code>, <code>scp</code>, <code>sftp</code>, <code>rsync</code>
+                        </dd>
+                        <dt>Shell &amp; locking</dt>
+                        <dd><code>bash</code>, <code>flock</code>, plus Bash built-ins such as <code>printf</code>,
+                            <code>read</code> and <code>test</code>
+                        </dd>
+                    </dl>
+                    <p class="muted">Use <code>/data</code> for persistent files. Scripts run as the service user;
+                        install additional dependencies in a custom image.</p>
+                </details>
                 <div class="stack" data-task-kind="http" {{if eq .Job.Kind "bash" }}hidden{{end}}><label>Endpoint
                         URL<input name="url" type="url" value="{{.Job.URL}}"
                             placeholder="https://example.com/api/tasks"><small>HTTPS endpoint

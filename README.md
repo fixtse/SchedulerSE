@@ -89,8 +89,18 @@ date -u > /data/reports/last-run.txt
 
 Scripts run with `bash -e -o pipefail` as the container's unprivileged service user.
 Each run gets a temporary working directory that is removed afterward; use `/data`
-for persistent files. Mount additional files or build a custom image to provide
-other tools and dependencies.
+for persistent files.
+
+The container includes common script utilities:
+
+- HTTP and JSON: `curl`, `wget`, `jq`.
+- Text and files: GNU coreutils, `find`, `xargs`, `grep`, `sed`, `gawk`, `diff` and `cmp`.
+- Archives: `tar`, `gzip`, `bzip2`, `xz`, `zip`, `unzip`.
+- Networking and TLS: `dig`, `nslookup`, `ip`, `ss`, `nc`, `openssl`.
+- Automation: `git`, `ssh`, `scp`, `sftp`, `rsync`, and util-linux tools such as `flock`.
+
+Mount additional files or build a custom image for other tools and dependencies.
+Rebuild or pull an updated image and recreate the container to use newly added tools.
 
 Exit zero records success; a nonzero exit records `SCRIPT_FAILED`. The execution
 timeout stops the script's process group. Scripts run once per occurrence, with HTTP
