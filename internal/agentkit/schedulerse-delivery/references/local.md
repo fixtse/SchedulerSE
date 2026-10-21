@@ -32,14 +32,14 @@ inside the SchedulerSE container.
 
 Store the SchedulerSE API token in a private file using the available secret store
 or private credential UI. Never send it in chat or include it in command arguments.
-Read `connection.json` from the installed skill for the service URL. The download
+Read `connection.json` from the extracted delivery kit for the service URL. The download
 captures the browser address automatically, including HTTP/HTTPS and any port.
 The initializer uses it by default and calls PUT `/connection` to select polling.
 The agent chooses the paths and routing label from its own runtime/session:
 
 
 ```sh
-python3 /installed/skill/scripts/bridge.py init-local \
+python3 /opt/schedulerse-delivery/scripts/bridge.py init-local \
   --state /private/schedulerse-connection \
   --token-file /private/scheduler-api-token \
   --workdir /agent/workspace \
@@ -49,7 +49,7 @@ python3 /installed/skill/scripts/bridge.py init-local \
 Only use `--scheduler-url` to override a packaged address that is unreachable from
 the agent's namespace, for example a known `http://schedulerse:8789` on its shared
 Docker network. This is an agent setup detail, not another required user input.
-A source-only skill copy without `connection.json` needs an explicit URL once.
+A source-only kit without `connection.json` needs an explicit URL once.
 Omitting `--token-file` prompts
 for the token without echo when running interactively. The helper creates private
 configuration with a stable random `consumer_id`. Preserve it with the SQLite
@@ -67,7 +67,7 @@ is the requested destination. For another agent, configure trusted local argv us
 Start the consumer:
 
 ```sh
-python3 /installed/skill/scripts/bridge.py run --state /private/schedulerse-connection
+python3 /opt/schedulerse-delivery/scripts/bridge.py run --state /private/schedulerse-connection
 ```
 
 Keep it running with the user's process supervisor or container restart policy.

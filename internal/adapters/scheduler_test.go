@@ -49,8 +49,8 @@ func TestDefaultsDSTAndValidation(t *testing.T) {
 		t.Fatal("manual task could not be scheduled:", err)
 	}
 	t.Setenv("COOKIE_SECURE", "yes")
-	if _, err := LoadConfig(); err == nil {
-		t.Fatal("invalid flag accepted")
+	if _, err := LoadConfig(); err != nil {
+		t.Fatal("legacy settings should be handled by the one-time import, not runtime configuration", err)
 	}
 }
 

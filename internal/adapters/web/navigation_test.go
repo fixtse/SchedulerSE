@@ -43,7 +43,7 @@ func TestEnhancedNavigationPreservesNormalFormsAndPrivateHistory(t *testing.T) {
 			t.Fatal("form accidentally opted into navigation swaps", form)
 		}
 	}
-	for _, path := range []string{"/settings/agent/skill.zip", "/settings/agent/guide.md"} {
+	for _, path := range []string{"/settings/agent/delivery.zip", "/settings/agent/guide.md"} {
 		pattern := regexp.MustCompile(`<a\b[^>]*href="` + regexp.QuoteMeta(path) + `"[^>]*>`)
 		link := pattern.FindString(pageHTML)
 		if link == "" || !strings.Contains(link, `hx-boost="false"`) {

@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -52,20 +53,23 @@ var pages = template.Must(template.New("page").Funcs(template.FuncMap{
 }).Parse(pageHTML))
 
 type Server struct {
-	Store      *adapters.Store
-	Config     adapters.Config
-	Reload     func()
-	SetupToken string
-	Runner     *application.Runner
-	Context    context.Context
-	Telegram   *adapters.Telegram
-	runMu      sync.Mutex
-	runs       sync.WaitGroup
-	closing    bool
-	authMu     sync.Mutex
-	attempts   int
-	window     time.Time
-	hashing    chan struct{}
+	appSettings atomic.Pointer[domain.AppSettings]
+	settingsMu  sync.Mutex
+	mcpHandler  http.Handler
+	Store       *adapters.Store
+	Config      adapters.Config
+	Reload      func()
+	SetupToken  string
+	Runner      *application.Runner
+	Context     context.Context
+	Telegram    *adapters.Telegram
+	runMu       sync.Mutex
+	runs        sync.WaitGroup
+	closing     bool
+	authMu      sync.Mutex
+	attempts    int
+	window      time.Time
+	hashing     chan struct{}
 }
 type jobView struct {
 	domain.Job
@@ -74,6 +78,7 @@ type jobView struct {
 	UsesTimezone bool
 }
 type view struct {
+	AppSettings                          domain.AppSettings
 	AgentGuide                           string
 	Remember                             bool
 	AgentTasks                           []domain.AgentTask
@@ -100,12 +105,17 @@ type view struct {
 }
 
 func New(s *adapters.Store, c adapters.Config, reload func(), token string) *Server {
-	return &Server{Store: s, Config: c, Reload: reload, SetupToken: token, hashing: make(chan struct{}, 1)}
+	server := &Server{Store: s, Config: c, Reload: reload, SetupToken: token, hashing: make(chan struct{}, 1)}
+	if settings, err := s.AppSettings(); err == nil {
+		server.appSettings.Store(&settings)
+	}
+	server.mcpHandler = server.newMCPHandler()
+	return server
 }
 func digest(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
 func equal(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 func (s *Server) cookie(w http.ResponseWriter, name, value string, maxAge int) {
-	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", HttpOnly: true, Secure: s.Config.CookieSecure, SameSite: http.SameSiteStrictMode, MaxAge: maxAge})
+	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: "/", HttpOnly: true, Secure: s.settings().CookieSecure, SameSite: http.SameSiteStrictMode, MaxAge: maxAge})
 }
 func (s *Server) preauth(w http.ResponseWriter, r *http.Request) string {
 	if c, err := r.Cookie("preauth"); err == nil && len(c.Value) >= 26 && len(c.Value) <= 128 {
@@ -244,7 +254,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /settings/agent/skill.zip", s.serveAgentSkill)
+	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) { s.generalSettings(w, r, csrf, username) })
+	mux.HandleFunc("POST /settings", func(w http.ResponseWriter, r *http.Request) { s.generalSettings(w, r, csrf, username) })
+	mux.HandleFunc("GET /settings/agent/delivery.zip", s.serveAgentDelivery)
 	mux.HandleFunc("GET /settings/agent/guide", func(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/settings/agent#setup-guide")
 	})
@@ -428,7 +440,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request, csrf, user st
 		redirect(w, r, "/?page="+strconv.Itoa(history.Page)+"#activity")
 		return
 	}
-	v := view{Page: "dashboard", Title: "Your automations", CSRF: csrf, Username: user, Timezone: s.Config.Timezone, HistoryPage: history.Page, HistoryPages: history.Pages, HistoryTotal: history.Total}
+	v := view{Page: "dashboard", Title: "Your automations", CSRF: csrf, Username: user, Timezone: s.settings().Timezone, HistoryPage: history.Page, HistoryPages: history.Pages, HistoryTotal: history.Total}
 	for _, run := range history.Runs {
 		v.Runs = append(v.Runs, executionView(run))
 	}
@@ -447,7 +459,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request, csrf, user st
 		v.Notice = "Run started. Refresh recent activity to see the result."
 	}
 	for _, j := range jobs {
-		j.Timezone = adapters.JobTimezone(j, s.Config.Timezone)
+		j.Timezone = adapters.JobTimezone(j, s.settings().Timezone)
 		loc, _ := time.LoadLocation(j.Timezone)
 		next := "Manual only"
 		if j.Cron != "" {
@@ -493,6 +505,10 @@ func (s *Server) saveJob(w http.ResponseWriter, r *http.Request, csrf string, cr
 		}
 	}
 	has := j.Authorization != ""
+	if _, submitted := r.PostForm["kind"]; submitted {
+		j.Kind = r.PostFormValue("kind")
+		j.Script = r.PostFormValue("script")
+	}
 	j.Name = strings.TrimSpace(r.PostFormValue("name"))
 	j.URL = strings.TrimSpace(r.PostFormValue("url"))
 	j.Body = []byte(strings.TrimSpace(r.PostFormValue("body")))
@@ -543,7 +559,7 @@ func (s *Server) saveJob(w http.ResponseWriter, r *http.Request, csrf string, cr
 		err = timeoutErr
 	}
 	if err == nil {
-		err = adapters.ValidateJob(j, s.Config.Timezone)
+		err = adapters.ValidateJob(j, s.settings().Timezone)
 	}
 	if err == nil && j.Enabled && j.Cron != "" {
 		err = s.validateRunnable(j)
@@ -566,10 +582,10 @@ func (s *Server) saveJob(w http.ResponseWriter, r *http.Request, csrf string, cr
 }
 
 func (s *Server) renderJob(w http.ResponseWriter, status int, csrf string, j domain.Job, create, has bool, schedule scheduleForm, message string) {
-	zone := adapters.JobTimezone(j, s.Config.Timezone)
+	zone := adapters.JobTimezone(j, s.settings().Timezone)
 	hasFallback := j.FallbackAuth != ""
 	j.Authorization, j.FallbackAuth = "", ""
-	render(w, status, view{Page: "job", Title: "Edit automation", CSRF: csrf, Job: j, New: create, HasAuthorization: has, HasFallbackAuth: hasFallback, Timezone: zone, Schedule: schedule, Timezones: timezoneChoices(zone, s.Config.Timezone), Weekdays: weekdayChoices(schedule.Days), Error: message, RunToken: rand.Text(), DefaultTimeoutMS: s.Config.Timeout.Milliseconds()})
+	render(w, status, view{Page: "job", Title: "Edit automation", CSRF: csrf, Job: j, New: create, HasAuthorization: has, HasFallbackAuth: hasFallback, Timezone: zone, Schedule: schedule, Timezones: timezoneChoices(zone, s.settings().Timezone), Weekdays: weekdayChoices(schedule.Days), Error: message, RunToken: rand.Text(), DefaultTimeoutMS: s.defaultTimeout().Milliseconds()})
 }
 
 var runTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{26,128}$`)
@@ -590,34 +606,40 @@ func (s *Server) runJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid run token; reload before running it", 400)
 		return
 	}
-	if err = adapters.ValidateJob(j, s.Config.Timezone); err == nil {
+	if err = adapters.ValidateJob(j, s.settings().Timezone); err == nil {
 		err = s.validateRunnable(j)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
+	status, message := s.startJob(j, token)
+	if status != http.StatusAccepted {
+		http.Error(w, message, status)
+		return
+	}
+	redirect(w, r, "/?run=started")
+}
+
+func (s *Server) startJob(j domain.Job, token string) (int, string) {
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 	if s.closing || s.Runner == nil || s.Context == nil || s.Context.Err() != nil {
-		http.Error(w, "Manual execution unavailable", 503)
-		return
+		return 503, "Manual execution unavailable"
 	}
 	execute, err := s.Runner.Prepare(s.Context, j, "manual:"+token)
 	if err != nil {
-		http.Error(w, "Could not record execution; check recent activity before trying again", 503)
-		return
+		return 503, "Could not record execution; check recent activity before trying again"
 	}
 	if execute == nil {
-		http.Error(w, "This run was already submitted, the task is running, or the job changed. Check recent activity.", 409)
-		return
+		return 409, "This run was already submitted, the task is running, or the job changed. Check recent activity."
 	}
 	s.runs.Add(1)
 	go func() {
 		defer s.runs.Done()
 		_, _ = execute()
 	}()
-	redirect(w, r, "/?run=started")
+	return http.StatusAccepted, "Execution started"
 }
 
 // Wait stops admitting manual runs and waits before the state store is closed.

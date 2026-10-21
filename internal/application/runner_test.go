@@ -93,7 +93,7 @@ func TestRunnerContracts(t *testing.T) {
 				if len(a.messages) != 0 {
 					t.Fatal(a.messages)
 				}
-			} else if len(a.messages) != 1 || a.messages[0] != tc.wantAlert {
+			} else if len(a.messages) != 1 || !strings.HasPrefix(a.messages[0], tc.wantAlert+"\n\n") {
 				t.Fatal(a.messages)
 			}
 			if tc.code != "" {
@@ -258,5 +258,48 @@ func TestRunnerCompletionNotificationTypesAndDedup(t *testing.T) {
 				t.Fatal("repeated run sent a duplicate notification")
 			}
 		})
+	}
+}
+
+func TestRunnerAppliesSavedDefaultsToFutureRuns(t *testing.T) {
+	store, err := adapters.OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.DB.Close()
+	job := domain.Job{ID: "defaults", Name: "Defaults", Policy: "generic", Enabled: true}
+	if err = store.Save(job, true); err != nil {
+		t.Fatal(err)
+	}
+	job, err = store.Job(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual domain.Job
+	runner := application.Runner{Store: store, Notifications: &alerts{}, Log: &logs{}, Timeout: 120 * time.Second, Sync: syncFunc(func(ctx context.Context, j domain.Job) (domain.Response, error) {
+		actual = j
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) > time.Duration(j.TimeoutMS)*time.Millisecond {
+			t.Error("new timeout not applied to execution")
+		}
+		return domain.Response{}, nil
+	})}
+	for i, settings := range []domain.AppSettings{{Timezone: "UTC", TimeoutMS: 1000}, {Timezone: "Asia/Tokyo", TimeoutMS: 3000}} {
+		if err = store.SaveAppSettings(settings); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = runner.Run(context.Background(), job, "manual:"+settings.Timezone); err != nil {
+			t.Fatal(err)
+		}
+		if actual.TimeoutMS != settings.TimeoutMS || actual.Timezone != settings.Timezone {
+			t.Fatal("defaults not refreshed for run", i, actual)
+		}
+	}
+	job.TimeoutMS, job.Timezone = 5000, "America/Lima"
+	if _, err = runner.Run(context.Background(), job, "manual:override"); err != nil {
+		t.Fatal(err)
+	}
+	if actual.TimeoutMS != 5000 || actual.Timezone != "America/Lima" {
+		t.Fatal("explicit task settings overwritten", actual)
 	}
 }

@@ -1,161 +1,179 @@
 # SchedulerSE
 
-A lightweight, self-hosted HTTP POST scheduler with an authenticated web interface.
-Create tasks, choose their timezones, build schedules, and run tasks manually.
-SQLite stores task settings, credentials, account information, and execution history.
-Tasks support optional retries and a fallback endpoint. Telegram alerts are sent once.
+**Give your AI agents reminders, timers and the ability to run automations.**
 
-Licensed under the [MIT License](LICENSE).
+SchedulerSE gives AI agents a persistent scheduling service for follow-ups, HTTP POST
+automations and Bash scripts. Agents can create reminders, schedule recurring work
+and start saved automations through the API. Manage everything from an authenticated
+web interface, with execution history and detailed Telegram alerts.
 
-## Getting started
+## Features
 
-Requires Docker Engine and Docker Compose v2.24+. Use a prebuilt image; GitHub Actions
-owns verification and image publishing. The deployment server does not need Go or a
-local build toolchain.
+- **HTTP POST automations** — send JSON payloads with optional authorization, task-specific timeouts, retries and a fallback endpoint.
+- **Bash script tasks** — paste a script into the editor and run it on demand or on a schedule. Bash is included in the container.
+- **Flexible scheduling** — minute intervals, hourly, daily, weekly, monthly and advanced cron schedules, with a timezone for each task.
+- **Manual execution** — start saved tasks with **Run now**, with protection against duplicate submissions and overlapping runs.
+- **Telegram alerts** — choose success, failure and fallback notifications.
+- **Execution history** — inspect past runs, HTTP statuses, errors, task revisions and notification delivery.
+- **MCP integration** — give agents discoverable tools for timers, reminders, HTTP POST and Bash automations, including setup guidance and access to the standalone reminder bridge.
+
+## Quick start
+
+With Docker Engine and Docker Compose installed:
 
 ```sh
 git clone https://github.com/fixtse/SchedulerSE.git
 cd SchedulerSE
-cp .env.example .env
-chmod 600 .env
 ```
 
-Set `SCHEDULERSE_IMAGE` to a published image tag or digest. The default image is
-`ghcr.io/fixtse/schedulerse:latest`. If you fork the repository, use the image published
-under your own owner/repository. Registry authentication is needed only for private images.
-The scheduler is always active. New tasks start disabled so you can finish configuring
-them before enabling their schedules. Configure optional Telegram notifications in the
-web interface; no Telegram credentials are needed in `.env`.
+Start the service using the prebuilt image:
 
 ```sh
 docker compose pull
 docker compose up -d --wait
 ```
 
-Open **http://127.0.0.1:8789** on the server, or access it through an SSH tunnel:
+Open **http://127.0.0.1:8789**. For a remote server, forward the port over SSH:
 
 ```sh
 ssh -L 8789:127.0.0.1:8789 your-server
 ```
 
-On first visit, create an administrator account using the one-time setup token:
+Generate the one-time setup token and use it to create your administrator account:
 
 ```sh
 docker compose exec schedulerse /app/schedulerse setup-token
 ```
 
-Usernames accept 3–64 letters, digits, dots, underscores or hyphens. Passwords must be
-12–72 bytes. Setup closes once the administrator account exists.
+Usernames accept 3–64 letters, digits, dots, underscores or hyphens. Passwords accept
+12–72 bytes. You can now create your first automation and configure Telegram in settings.
 
-**Fresh installations start with no tasks.** Add tasks in the web interface, including
-the endpoint URL, optional authorization header, and JSON body. Authorization values
-include the complete header value, such as `Bearer …`; saved headers are never displayed.
-New tasks start with scheduled runs disabled. Payload values retain their JSON types.
+## Create an automation
 
-Each task has an optional **Request timeout (milliseconds)** in the editor. Set
-100–600000 ms (up to 10 minutes), or leave it blank to inherit `REQUEST_TIMEOUT_MS`
-from the server (default: 120000 ms). The saved timeout applies to scheduled and
-manual requests, including response-body reads. Existing tasks inherit the server
-default until an override is saved. Telegram delivery keeps its separate timeout.
+Choose a task type in the editor, add its settings, then select a schedule. New tasks
+start with scheduled execution disabled; enable them when ready. **Run now** executes
+the saved task immediately, including tasks with scheduling disabled. Save edits before
+running, then check **Recent activity** for the result.
 
-## Sign-in and password recovery
+### HTTP POST
 
-Choose **Stay signed in for 30 days** on the login form to keep a trusted browser
-connected. Unchecked logins retain the 12-hour session. Signing out invalidates that
-browser's session; a password reset invalidates all web sessions, including remembered
-sessions. Session cookies remain HttpOnly and use the configured HTTPS security setting.
+Enter an endpoint URL, a JSON object and an optional authorization header. Use the
+complete header value, such as `Bearer …`. JSON values retain their original types.
+Leave a saved authorization field blank to keep its current value.
 
-If you forget your password, select **Forgot password?** on the login page, then
-**Send reset token to Telegram**. Open the chat already saved in Telegram settings,
-copy the token, and select **Use a reset token**. Enter it with a new password twice
-(12–72 bytes), then sign in normally. Tokens expire after 10 minutes, are stored only
-as hashes, and can be used once. Resetting invalidates all outstanding reset tokens
-and web sessions. Changing Telegram settings also invalidates previously issued tokens.
-Tokens are pasted into the form, never included in reset URLs.
+Set an **Execution timeout** of 100–600000 milliseconds, or leave it blank to inherit
+the default in **General settings** (initially 120000). The timeout applies separately to each attempt,
+including reading the response body.
 
-Recovery uses the saved bot/chat even if routine Telegram notifications are disabled
-or all notification types are unchecked. Anyone with access to that chat can use a
-reset token, so select a trusted recovery destination. No new bot/chat details can be
-supplied from the recovery page. Requests are limited to one per minute and five per
-hour, persisted across restarts. Messages are attempted once; a token may still work
-if Telegram accepted it but delivery confirmation failed. Without saved working
-Telegram credentials, this flow cannot recover the account.
+For endpoints that safely accept repeated requests, configure recovery:
 
-## Web navigation
+- **Retries after failure:** 0–5 extra attempts after HTTP 429 or 5xx responses.
+- **Delay between retries:** 100–60000 milliseconds; blank uses 1000.
+- **Fallback endpoint:** send the same JSON body once after eligible primary failures
+  and exhausted retries. Configure its authorization header separately.
+- **Also recover after uncertain results:** extend recovery to timeouts, network errors,
+  redirects and unreadable responses. The original request may already have completed,
+  so enable this only when repeated execution is safe.
 
-Page links use a locally bundled copy of HTMX 2.0.11 to replace page content while
-keeping the stylesheet loaded. Forms and file downloads use ordinary browser
-navigation; links also work when JavaScript is unavailable. Navigation errors fall
-back to a normal page load. Authenticated pages remain `no-store`, and HTMX history
-snapshots are disabled. Public CSS and scripts use content-versioned URLs so browsers
-can reuse them across page changes. An open tab reloads its document when it detects
-a release with changed assets. No external
-CDN is required. The vendored HTMX license is included in the source and image.
+A successful fallback is recorded as a fallback result and uses the corresponding
+Telegram notification preference. A failed fallback is recorded as a failure.
 
-## Scheduling and manual runs
+### Bash scripts
 
-Choose **Manual only**, **Every few minutes**, **Hourly**, **Daily**, **Weekly**, or
-**Monthly**, then choose a timezone. Weekly schedules support multiple weekdays.
-Monthly schedules skip months without the selected day. **Advanced cron** supports
+Choose **Bash script** and paste your script. For example:
+
+```bash
+mkdir -p /data/reports
+date -u > /data/reports/last-run.txt
+```
+
+Scripts run with `bash -e -o pipefail` as the container's unprivileged service user.
+Each run gets a temporary working directory that is removed afterward; use `/data`
+for persistent files. Mount additional files or build a custom image to provide
+other tools and dependencies.
+
+Exit zero records success; a nonzero exit records `SCRIPT_FAILED`. The execution
+timeout stops the script's process group. Scripts run once per occurrence, with HTTP
+retry and fallback settings disabled. Output is discarded; write any needed artifacts
+to persistent storage. Run trusted scripts, which have access to the service environment
+and its accessible files.
+
+### Schedules and timezones
+
+Choose **Manual only**, **Every few minutes**, **Hourly**, **Daily**, **Weekly** or
+**Monthly**. Weekly schedules support multiple weekdays. **Advanced cron** accepts
 five fields, or six including seconds.
 
-Times follow the task's timezone, including daylight-saving changes: skipped local
-times do not run, and repeated local times can run twice. Next runs display in each
-task's timezone; execution history uses UTC. The server timezone, `TZ`, is the fallback
-for tasks without an explicit timezone; its default remains `Europe/Madrid` for upgrade
-compatibility.
+Each task follows its selected timezone, with **General settings** providing the default. Next-run
+times appear in the task's timezone; history timestamps use UTC. Daylight-saving
+changes follow local clock time: skipped times are skipped, and repeated times can
+run twice. Monthly schedules skip months without the selected day.
 
-Enable or disable scheduled execution for each task in the web interface. The scheduler
-runs whenever the service is running; there is no global off switch. Old environment
-settings cannot disable it. Run only one scheduler for a given set of endpoints.
+## Telegram notifications
 
-Use **Run now** on any task card or editor to start one execution with its saved
-retry and fallback settings, even when scheduled runs are disabled. Save edits first.
-Runs continue in the background; refresh recent activity to see the result. Duplicate
-form submissions and overlapping runs of the same task are rejected. Running a task
-manually does not enable its schedule.
+Open **Telegram settings**, enter your bot token from @BotFather and a destination
+chat ID or public channel `@username`, then enable notifications and save. Start a
+conversation with the bot or grant it permission to send messages to your group or
+channel. Use **Test Telegram** to verify the saved connection; allow 10 seconds between tests.
 
-## Agent timers, reminders and tasks
+Choose the events you want to receive:
 
-Open **Agent API settings** after signing in:
+- **Failures and timeouts**
+- **Successful completions**
+- **Fallback warnings**
 
-1. Generate an API token in settings. It is shown once; only its SHA-256 hash is saved.
-2. Click **Download agent skill** and install the extracted `schedulerse-agent` folder.
-   Setup instructions, token controls, delivery settings and the API reference are
-   all on the same Agent API settings page, with a Markdown reference download.
-   The download includes the address used in your browser, including HTTP/HTTPS,
-   hostname or IP address, and port. Give your agent only the API token privately
-   and ask it to connect. The agent configures polling or a webhook through the API;
-   no copying URLs or choosing delivery settings is required.
-3. Keep the skill's Python bridge running beside your agent using a process supervisor.
-   It picks up due reminders, stores receipts durably and invokes Codex or the chosen
-   agent adapter. No AI request is made when the inbox is empty.
+## Execution history
 
-**Docker needs no callback to the host.** A bridge on the same Compose network can
-connect to `http://schedulerse:8789`; a bridge on the host uses the existing published
-service URL. The scheduler makes no connection back to the agent. No inbound bridge
-port, public hostname, Cloudflare account or tunnel is required. The agent runtime,
-its normal credentials and persistent bridge state must exist where the bridge runs.
-A bare Python container cannot invoke a Codex binary installed only on the host.
-See [the local setup instructions](skills/schedulerse-agent/references/local.md).
+**Recent activity** shows 25 runs per page. Expand a row to inspect its trigger,
+start and finish times, duration, HTTP status, error code, timeout, task revision,
+attempt count, fallback use and Telegram delivery result. Each record captures the
+task identity and execution settings used for that run.
 
-Standalone Codex turns write their output locally or resume an explicit CLI session;
-they do not automatically appear in T3 Code's UI. For reminders in a T3 thread, use
-its native webhook integration when reachable. **Webhook** delivery and the optional
-Cloudflare inbox remain available for remote integrations; the skill does not
-provision them for a local setup. The token can configure webhook URLs and credentials
-through GET/PUT `/api/agent/v1/connection`; browser settings remain available for
-manual control. The connection API never returns a stored authorization header.
+Use **Newer** and **Older** to browse previous executions. Older records remain
+available across upgrades; fields introduced after a run appear as **Not recorded**.
 
-The bearer-authenticated JSON API at `/api/agent/v1` can create, list, inspect and
-cancel agent schedules and configure their delivery connection. Tokens cannot manage
-automation jobs, account settings, Telegram or API token generation/revocation. There is one shared
-agent token and delivery mode per installation; use this with trusted agents.
-The **Agent schedules** tab keeps these items separate from **Your automations**
-and its execution history. It shows status, UTC due time, recurrence, callback
-HTTP result, errors and routing context, and lets you cancel pending items.
+## Agent timers and reminders
 
-For example, an agent creates a timer with:
+Use the **Agent schedules** tab for timers, reminders and recurring agent tasks.
+The built-in MCP server provides structured tools for creating, inspecting and
+cancelling reminders, configuring delivery, and creating or running HTTP POST and
+Bash automations. The REST API remains available at `/api/agent/v1`.
+The shared token grants script execution as the service user; give it to trusted agents.
+
+### Connect an agent
+
+1. Open **Agent API settings** and add its MCP server URL to your agent’s client.
+   Use **Streamable HTTP** at `https://your-server/api/agent/v1/mcp`.
+2. Generate a token and store it privately in the client’s connection settings as
+   `Authorization: Bearer <token>`. Choose a client that supports remote HTTP
+   connections with bearer headers.
+3. Ask the agent to configure reminder delivery and verify a test reminder. The agent
+   can read setup guides and fetch bridge files directly through MCP.
+   A standalone **delivery kit** is also available for manual installation.
+
+MCP exposes `create_timer`, `create_reminder`, `list_schedules`, `get_schedule`,
+`cancel_schedule`, `create_automation`, `list_automations`, `get_automation`,
+`run_automation`, `list_runs`, `get_connection`, `configure_connection`, `get_guide`
+and `get_delivery_file`.
+Execution tools return acceptance; use `list_runs` to inspect completion. Token
+replacement or revocation applies immediately to MCP and REST requests.
+
+For reminder delivery, keep the bundled Python bridge running beside the agent under
+a process supervisor, with persistent state, or configure a reachable webhook receiver.
+
+The bridge polls for due reminders, saves durable receipts and invokes Codex or the
+configured agent adapter. Install the agent runtime and its credentials alongside
+the bridge. On the Compose network, the service address is
+`http://schedulerse:8789`; a bridge on the host uses the published service address.
+See the [local setup guide](internal/agentkit/schedulerse-delivery/references/local.md).
+
+For remote integrations, choose **Webhook** delivery. For reminders delivered into a
+T3 thread, use its native webhook integration when reachable. Further setup is covered
+in the [T3 guide](internal/agentkit/schedulerse-delivery/references/t3.md) and
+[Cloudflare inbox guide](internal/agentkit/schedulerse-delivery/references/cloudflare.md).
+The Agent API settings page also provides a downloadable API reference.
+
+### Create a timer
 
 ```http
 POST /api/agent/v1/tasks
@@ -165,97 +183,48 @@ Content-Type: application/json
 {"id":"tea-timer-001","kind":"timer","title":"Tea is ready","after_seconds":180,"context":{"conversation_id":"chat-123"}}
 ```
 
-Use `run_at` with an RFC3339 timestamp and explicit timezone offset for reminders
-at a particular time. Optional `interval_seconds` supports fixed elapsed time
-recurrence (minimum 60 seconds); calendar schedules remain available in automations.
-Stable caller-chosen IDs prevent duplicate creation after an uncertain API response.
-GET `/api/agent/v1/tasks/{id}` to check the result before retrying a creation.
+Use `run_at` with an RFC3339 timestamp and explicit offset for a particular time.
+Add `interval_seconds` for recurring delivery, with a minimum interval of 60 seconds.
+Use stable task IDs and inspect `GET /api/agent/v1/tasks/{id}` before retrying an
+uncertain creation request.
 
-Each due occurrence produces a `schedule.due` envelope with a stable `event_id`,
-the scheduled time, and the task's message and unchanged `context`. Local polling
-requires `context.conversation_id` to match the bridge's routing label. A bridge
-saves each occurrence before atomically acknowledging pickup; stable consumer IDs
-make acknowledgements safe to retry after a lost response and prevent two different
-consumers from claiming the same occurrence. Delivery status means acceptance by the
-consumer, not completion by the AI. Due schedules wait while the bridge is stopped.
+### Delivery behavior
 
-In webhook mode, the receiver must durably accept the callback and return 2xx within
-10 seconds. Callbacks are attempted once without redirects or automatic retries;
-failed webhook recurrences stop. In-flight callbacks interrupted by a crash are
-marked `interrupted` on startup and are not replayed. An existing callback can finish
-while switching delivery modes. Pending schedules survive mode changes and restarts.
+Each due occurrence produces a `schedule.due` event with a stable `event_id`, scheduled
+time, message and original `context`.
 
-Recurrence advances after pickup or successful callback and skips missed slots.
-Local invocation failures do not undo pickup or stop future recurring pickups;
-inspect the bridge's failed/interrupted receipts before explicitly repeating work.
-Revoking an API token stops polling access but leaves schedules intact. Webhook
-execution is independent of API token revocation. Cancel unwanted pending schedules
-separately. Use HTTP only on trusted local networks and HTTPS for remote API/callback
-access.
+- **Local polling:** `context.conversation_id` matches the bridge's routing label.
+  The bridge saves an occurrence before acknowledging it, using a stable consumer ID.
+  Due reminders wait while the bridge is offline.
+- **Webhooks:** the receiver durably accepts the event and returns 2xx within
+  10 seconds. Delivery is attempted once; failed webhook recurrences stop. Callbacks
+  interrupted by a restart are marked `interrupted` for review.
 
-## Retries and fallback
+Delivery status records acceptance by the bridge or receiver. Review the agent's
+own results for completion. Recurrence advances after pickup or a successful callback,
+skipping missed slots. Local invocation failures remain in bridge receipts while
+future recurring pickups continue.
 
-In any task editor, choose **Retries after failure** (0–5 extra primary attempts)
-and a fixed delay (100–60000 ms; blank means 1000 ms). Retries apply to HTTP 429
-and 5xx failures. The request timeout applies separately to each attempt.
+Pending schedules persist across restarts and delivery-mode changes. Token revocation
+stops polling access; cancel pending schedules separately to stop their future delivery.
+Each installation shares one agent token and delivery mode. Use HTTPS for remote API
+and webhook connections.
 
-Optionally set a **Fallback endpoint URL**. Once primary retries are exhausted
-(or for a non-retryable HTTP 4xx failure), the same JSON body is sent to that
-endpoint once. Set its authorization header separately; primary credentials are
-never copied. A successful fallback records a fallback result and uses the
-**Fallback warnings** Telegram preference. A failed fallback records a failure.
+## Settings
 
-Timeouts, network errors, redirects, and unreadable responses do not trigger
-recovery unless **Also recover after uncertain results** is selected. Such requests
-may already have completed. Even an HTTP error may follow side effects, so enable
-recovery only for endpoints that can safely accept repeated POSTs. Telegram sends
-are never retried. All attempts share one durable execution claim, preventing
-overlapping runs of that task. Restarting never resumes an interrupted execution.
+Open **General settings** to choose your default timezone and execution timeout.
+Tasks can override either value. Under **Advanced options**, enable **Use secure
+cookies** when accessing SchedulerSE over HTTPS. Changes apply immediately and are
+saved with your account and task data.
 
-Existing tasks keep retries and fallback disabled until configured. To convert a
-manual task, edit it, select a frequency, and enable scheduled runs. Legacy payload
-validation and alert behavior remain in place.
+Manage Telegram and agent connections in their own settings pages. Compose uses
+port `8789`, the `schedulerse_state` volume and the published `latest` image.
+For an HTTPS reverse proxy, preserve the original `Host` header and exclude
+`/health` from proxying. Keep credentials and state backups private.
 
-## Execution history
+## Updates and backups
 
-Recent activity shows 25 runs per page with **Newer** and **Older** navigation. Click
-any row or its chevron to expand the run details: manual or scheduled trigger, start
-and finish times, total duration, HTTP status, error code, request timeout, saved task
-revision, request attempt count, fallback endpoint use, and Telegram delivery result.
-The run captures the task name and settings at execution time. Response bodies and authorization headers are not saved in history.
-
-Older runs remain available after upgrading. Fields that were not collected by older
-releases show **Not recorded**; their duration is estimated from saved timestamps.
-Retries are disabled by default. Interrupted executions never resume automatically.
-
-## Telegram notifications
-
-Open **Telegram settings** after signing in. Enter the bot token from @BotFather and
-the destination chat ID (or public channel @username), enable notifications, and save.
-Start a conversation with the bot or give it permission to send messages in your group
-or channel. Tokens are never displayed after saving; leave the token field blank to
-keep the saved value. You can replace or remove it, and disable notifications in the UI.
-
-Choose **Failures and timeouts**, **Successful completions**, and/or **Fallback warnings**
-in **Notification types**. Choices apply immediately to both scheduled and manual runs.
-Fallback warnings are separate from successful completions, so a fallback produces at
-most one message. Existing settings retain failure and fallback alerts; success messages
-start disabled. You can leave all types unchecked to silence task events while keeping
-the connection enabled. Interrupted runs during shutdown remain silent.
-
-Click **Test Telegram** to send one message with the saved credentials, regardless of
-the selected notification types. Save edits
-before testing, check the selected chat, and wait 10 seconds between tests. Tests are
-recorded before sending to prevent duplicate submissions and concurrent sends. Errors
-never expose the token or Telegram response, and uncertain sends are never retried
-automatically. Notification changes apply immediately without restarting the service.
-
-Existing environment credentials are imported into SQLite once during the first upgrade.
-After import you can remove `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from `.env`;
-subsequent changes, including disabling notifications, belong to the UI and will not be
-overwritten by old environment values. Keep the state volume to retain the connection.
-
-## Upgrading and persistent storage
+Pull the selected image and recreate the service:
 
 ```sh
 docker compose pull
@@ -263,71 +232,6 @@ docker compose up -d --wait
 docker compose logs --tail 50 schedulerse
 ```
 
-Set `SCHEDULERSE_IMAGE` to a published `sha-<commit>` tag or digest to pin a release.
-For automatic deployment with Dokploy, configure the repository Actions secret
-`DOKPLOY_SCHEDULERSE_DEPLOY_HOOK` with the service's deploy URL, and configure the
-service to pull the prebuilt `latest` image. Successful pushes to `main` deploy only
-after verification, image publishing, and the isolated image smoke test pass.
-Manual runs of the publishing pipeline on `main` also deploy. Pull requests and
-version-tag builds do not deploy. The hook is called once, without automatic retries,
-and its URL is never printed in logs. Without the secret, deployment is skipped;
-verification and publishing still work for forks and standalone installations.
+## License
 
-**Existing saved tasks survive this update.** Startup does not seed, overwrite, or delete
-tasks. Keep the same `.env`, `TZ`, and state volume to retain schedules, timezones,
-authorization headers, payloads, enabled settings, account, and execution history.
-Compatibility handling retains the validation, alert behavior, and credential
-requirements of tasks saved by older releases. Any manual task can now be given a
-schedule. These tasks are not bundled into new installations. Old service-specific job environment variables are no
-longer read; edit existing tasks in the web interface.
-
-`SCHEDULERSE_STATE_VOLUME` selects the persistent Docker volume; its default remains
-`schedulerse_state`. Keep this value when redeploying, even if you rename or move the
-checkout. Stop the service before backing up the volume, and store `.env` separately.
-`docker compose down` retains data; `docker compose down -v` deletes it.
-
-## Access and configuration
-
-`MANAGEMENT_BIND` and `MANAGEMENT_PORT` are optional Docker Compose settings. They
-select the host interface and port used to publish the management UI. Omitting them
-uses `127.0.0.1` and `8789`, so the UI is accessible from the host or an SSH tunnel.
-For example, `MANAGEMENT_PORT=9000` publishes the UI at `http://127.0.0.1:9000` while
-the container continues listening on port `8789`.
-
-`LISTEN_ADDR` controls where the application itself listens. `:8789` means port `8789`
-on all interfaces inside the container, allowing Docker's port mapping and reverse
-proxies on the container network to reach it. The Dockerfile defaults to `:8789`, and
-Compose explicitly sets that value to match its container port mapping. Setting
-`LISTEN_ADDR` in `.env` does not override Compose's explicit value. Use the
-`MANAGEMENT_*` settings to change host publishing; changing the internal listener
-requires updating Compose's `environment` and container port mapping together.
-When running the binary directly, `LISTEN_ADDR` can select an address such as
-`127.0.0.1:8789`; if unset, it defaults to `:8789` (or the legacy `HEALTH_PORT` value).
-The healthcheck command uses the same listener port.
-
-The browser supplies its origin when downloading a skill; the server checks that
-the host matches the request. Forwarded headers are not trusted for URL generation.
-Without browser origin metadata, the server uses a same-host Referer or the request
-scheme (`COOKIE_SECURE=true` supplies HTTPS behind a proxy). Re-download the skill
-from the new address if you move the service. URL metadata contains no API token.
-
-For HTTPS through a reverse proxy, set `COOKIE_SECURE=true`, preserve the original
-`Host` header, and exclude `/health` from proxying. Setup and login are rate limited;
-changes require an authenticated session and a CSRF token.
-
-Keep `.env`, saved state, credentials, and setup tokens out of source control and images.
-The runtime image contains the application, required certificates, and its license.
-
-## CI and publishing
-
-GitHub Actions checks formatting, vet, race tests, and Compose configuration using
-`.env.example`, then builds the AMD64 runtime image and smoke tests it in an isolated
-container without network access. Pushes to `main` and version tags publish to GHCR
-under the repository's owner and name; pull requests build and verify without publishing.
-Forks need GitHub Actions enabled and permission to publish packages. Configure package
-visibility in GHCR if you want anonymous pulls; CI does not change repository or package
-visibility.
-
-Go 1.27+ and the pinned Docker toolchain are required. Module and Docker dependency
-caches avoid repeated SQLite C compilation. Local builds, tests, and container smoke
-tests must not run on the resource-constrained deployment server; use Actions for verification.
+[MIT](LICENSE)

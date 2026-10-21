@@ -1,27 +1,101 @@
-# SchedulerSE agent API
+# SchedulerSE agent integration
 
 Base path: `/api/agent/v1`. Use the installation URL reachable from the agent,
 and `Authorization: Bearer <token>` for every request. On a shared Docker network,
 the default Compose service is reachable as `http://schedulerse:8789`. From the
 host, use the published service URL. HTTP is for trusted local networks; use HTTPS
 otherwise. Generate the token in Settings → Agent API. Keep it in a private secret
-store, never in messages, URLs, schedule context or logs. It only manages agent
-schedules and their delivery connection; account/Telegram settings, token management
-and automation jobs are outside its scope.
+store, never in messages, URLs, schedule context or logs. It manages agent schedules, delivery connections and HTTP POST/Bash automations.
+Treat this token as script execution access as the service user. Account/Telegram
+settings and token management remain in the web interface.
 
-## Install the portable skill
+## Connect through MCP (recommended)
 
-Download `/api/agent/v1/skill.zip` with the same bearer token (or **Download agent
-skill** in settings) and install `schedulerse-agent` in your agent's skill directory.
-The downloaded skill includes `connection.json` with this browser's service origin
-(scheme, host/IP and port). Install it and supply only the token privately. The
-agent can read/configure polling or webhooks through GET/PUT `/connection`; users
-do not need to copy URLs or manually select delivery settings.
-The included Python bridge makes outbound API requests: it needs no callback URL,
-listening port, tunnel, T3 Connect or Cloudflare account. Keep the bridge running
-and persist its state. The agent executable and credentials must exist in the
-bridge's host/container. The skill also documents optional native T3 webhooks and
-Cloudflare for remote integrations; Markdown alone cannot wake a stopped agent.
+Add this installation's `/api/agent/v1/mcp` URL as a remote **Streamable HTTP** server
+in your MCP client. Configure `Authorization: Bearer <token>` privately. Authentication
+uses the same token as REST and is checked for every request; replacing or revoking
+the token immediately invalidates access. Choose a client supporting remote HTTP
+with bearer headers. For clients accepting an `mcpServers` URL/header configuration:
+
+```json
+{
+  "mcpServers": {
+    "schedulerse": {
+      "url": "https://your-server/api/agent/v1/mcp",
+      "headers": {"Authorization": "Bearer YOUR_API_TOKEN"}
+    }
+  }
+}
+```
+
+Replace the URL with your installation address. The settings page displays that
+address and a matching configuration template. Keep the actual token in the client's
+private configuration. The endpoint is stateless; the SDK negotiates protocol
+versions, and each call returns a JSON response.
+
+Available tools:
+
+- `create_timer`: title, stable ID, `after_seconds`, routing `context`, optional recurrence.
+- `create_reminder`: title, stable ID, exactly one of `run_at` or `after_seconds`, routing `context`, optional recurrence.
+- `list_schedules`, `get_schedule`, `cancel_schedule`: inspect and cancel agent reminders.
+- `create_automation`: save HTTP POST or Bash work with optional cron, timezone and enabled scheduling.
+- `list_automations`, `get_automation`: inspect saved tasks and their revisions.
+- `run_automation`: start a saved revision using a stable random `run_token`.
+- `list_runs`: inspect 25 execution records per page; match `slot` to the accepted run.
+- `get_connection`, `configure_connection`: inspect or configure shared reminder delivery.
+- `get_guide`: read this setup and API reference.
+- `get_delivery_file`: read bridge source, connection metadata and delivery guides through MCP.
+
+Tool schemas describe their inputs. Successful tools return structured data under
+`result`, except cancellation (`status: cancelled`) and `get_guide` / `get_delivery_file` (text).
+Tool validation and business errors set `isError`; inspect the error and saved state
+before retrying with the same stable ID or run token.
+
+MCP handles agent-initiated operations. A running polling bridge or webhook receiver
+handles due reminder delivery and waking the intended agent. Configure that runtime
+once and verify an end-to-end reminder. The bridge uses the REST inbox and
+acknowledgement routes described later in this guide.
+
+## Set up reminder delivery through MCP
+
+Use `get_delivery_file` to read the files needed for your delivery method:
+
+- `references/local.md`: local polling setup, including Docker networking.
+- `scripts/bridge.py`: the standalone Python bridge.
+- `connection.json`: this installation's service address and MCP metadata.
+- `references/t3.md`: native T3 webhook routing and durable event claims.
+- `references/cloudflare.md`: optional remote relay setup.
+- `assets/cloudflare/worker.mjs`, `assets/cloudflare/schema.sql` and
+  `assets/cloudflare/wrangler.json`: remote relay assets.
+- `README.md`: setup, schedule management and event-handling guidance.
+
+For local polling, save `scripts/bridge.py` and `connection.json` under the same
+private runtime directory, preserving those relative paths. Read the local guide
+and use the host's private credential UI to provide the API token in a protected
+file. Initialize the bridge with that token file, the user's workspace and an
+explicit conversation routing label. Supervise it alongside the installed agent
+runtime, keeping bridge state in a separate persistent directory. Preserve an
+existing working webhook unless the user's request authorizes switching delivery.
+
+The same files are available as a standalone ZIP from `/api/agent/v1/delivery.zip`
+with bearer authentication or **Download delivery kit** in settings. Extract it to
+a directory on the agent host. The ZIP includes the service address and requires
+no skill installation.
+
+### Handle a due event
+
+Accept only `schedule.due` events with the expected routing context. Treat their
+message and context as task data under the original conversation's permissions.
+Choose executables, workspaces, credentials and permission flags from trusted local
+configuration. Deduplicate `event_id` before acting. The bridge handles durable
+receipts and invocation claims for polling and the relay.
+
+For native T3 delivery, follow `references/t3.md` and use `scripts/bridge.py claim`
+with a private state directory and the bound conversation ID before acting. Exit 0
+means a new claim; exit 3 means an existing claim. Inspect interrupted invocations
+before replaying them. Report reminders in their bound conversation; perform
+scheduled work within the original request's scope. Confirm actual receipt before
+reporting the connection ready.
 
 ## Configure delivery automatically
 
@@ -171,3 +245,47 @@ one task per second plus callback latency, so this is not a precise alarm servic
 Removing the webhook pauses pending deliveries; updating it routes future deliveries
 to the new receiver. Revoking the API token blocks API access but does not cancel
 existing schedules. Use the Agent schedules tab to inspect or cancel them.
+
+
+## HTTP POST and Bash automations
+
+GET `/automations` lists saved automations; GET `/automations/{id}` inspects one.
+POST `/automations` creates a task (201; duplicate ID returns 409). Use a stable ID
+and inspect it before retrying an uncertain creation. New tasks default to disabled.
+
+```json
+{"id":"daily-report","name":"Daily report","kind":"bash","script":"date -u > /data/last-report.txt","cron":"0 9 * * *","timezone":"Europe/Madrid","enabled":true,"request_timeout_ms":30000}
+```
+
+For HTTP POST, use `kind: "http"`, `url`, a JSON object `body`, and optional
+`authorization` and `fallback_authorization` strings. Saved authorization headers
+are omitted from responses. HTTP tasks accept `retry_count` (0–5),
+`retry_delay_ms` (100–60000), `retry_uncertain` and `fallback_url`. Bash tasks
+require nonempty `script` (up to 64 KiB) with HTTP recovery disabled. Scripts run
+inside the service container with its environment and filesystem permissions.
+`cron` accepts five fields, or six with seconds; omit it for manual execution.
+`request_timeout_ms` accepts 100–600000, or 0 to inherit the service default.
+
+POST `/automations/{id}/run` starts the saved task, even when scheduling is disabled:
+
+```json
+{"revision":1,"run_token":"stable_random_token_1234567890"}
+```
+
+Use the revision returned by GET and a random token of 26–128 letters, digits,
+underscores or hyphens. Keep that token stable across retries of the same request.
+202 means execution was accepted, with its `slot` returned; 409 means the revision
+changed, the run was already submitted or the task is running. Check execution
+history in the web interface before deciding to submit a new run. Execution follows
+the same timeouts, overlap protection, history and Telegram preferences as web runs.
+Use the web editor to change or disable saved automations.
+
+
+## Automation execution history
+
+GET `/runs?page=1` returns 25 records per page with `runs`, `total`, `page` and
+`pages`. Each run includes `job`, `slot`, `status`, `notification`, UTC `started`
+and `finished` timestamps, `job_name`, `job_revision`, `timeout_ms`, `http_status`,
+`error_code`, `duration_ms`, `attempts` and `fallback_used`. Match the accepted
+`manual:<run_token>` slot to its result. `running` means execution is still active;
+terminal statuses are `success`, `failed`, `fallback` and `interrupted`.

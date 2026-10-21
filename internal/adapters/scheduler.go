@@ -2,6 +2,8 @@ package adapters
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"github.com/fixtse/SchedulerSE/internal/application"
 	"github.com/fixtse/SchedulerSE/internal/domain"
 	"sync"
@@ -31,6 +33,20 @@ func (s *Scheduler) Serve(ctx context.Context) {
 	var active sync.WaitGroup
 	defer active.Wait()
 	for ctx.Err() == nil {
+		timezone := s.Timezone
+		settings, settingsErr := s.Store.AppSettings()
+		if settingsErr == nil {
+			timezone = settings.Timezone
+		} else if !errors.Is(settingsErr, sql.ErrNoRows) {
+			s.Log.Event("settings_error", nil)
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.reload:
+			case <-time.After(5 * time.Second):
+			}
+			continue
+		}
 		jobs, err := s.Store.Jobs()
 		if err != nil {
 			s.Log.Event("scheduler_error", nil)
@@ -54,7 +70,7 @@ func (s *Scheduler) Serve(ctx context.Context) {
 				s.Log.Event("job_not_ready", map[string]any{"job": j.ID})
 				continue
 			}
-			spec, parseErr := ParseSchedule(j.Cron, JobTimezone(j, s.Timezone))
+			spec, parseErr := ParseSchedule(j.Cron, JobTimezone(j, timezone))
 			if parseErr != nil {
 				s.Log.Event("scheduler_error", map[string]any{"job": j.ID})
 				continue

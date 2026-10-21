@@ -15,7 +15,7 @@
 
 <body hx-boost="true" hx-history="false" hx-sync="body:replace" hx-headers='{"X-SchedulerSE-UI":"{{uiVersion}}"}'>
     <header class="top"><a class="brand" href="/"><span class="mark">s</span> SchedulerSE<span class="brand-note">/
-                control room</span></a>{{if .Username}}<div class="account"><a href="/settings/agent">Agent API settings</a><a href="/settings/telegram">Telegram
+                control room</span></a>{{if .Username}}<div class="account"><a href="/settings">General settings</a><a href="/settings/agent">Agent API settings</a><a href="/settings/telegram">Telegram
                 settings</a><span>{{.Username}}</span>
             <form hx-boost="false" method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button
                     class="text-button">Sign out ↗</button></form>
@@ -86,7 +86,7 @@
                         class="badge {{if .Enabled}}enabled{{end}}">{{if .Enabled}}Enabled{{else}}Disabled{{end}}</span>
                 </div>
                 <h3><a href="/jobs/{{.ID}}">{{.Name}}</a></h3>
-                <p class="endpoint">{{.URL}}</p>
+                <p class="endpoint">{{if eq .Kind "bash"}}Bash script{{else}}{{.URL}}{{end}}</p>
                 <div class="job-meta"><span>Schedule</span><strong>{{.Schedule}}</strong>{{if
                     .UsesTimezone}}<span>Timezone</span><strong>{{.Timezone}}</strong>{{end}}<span>Next
                         run</span><strong>{{.Next}}</strong></div>
@@ -188,19 +188,69 @@
         </div>{{end}}
         {{else if eq .Page "agent"}}
 <div class="page-heading"><div><p class="eyebrow">TIMERS / REMINDERS / TASKS</p><h1>Agent schedules<span class="accent">.</span></h1><p class="muted">Schedules created through the agent API. Latest 200 items · all times UTC.</p></div><a class="primary" href="/settings/agent">Connect an agent →</a></div>
-<div class="jobs">{{range .AgentTasks}}<article class="job-card"><div class="card-top"><span>{{.Kind}}</span><span class="badge">{{.Status}}</span></div><h3>{{.Title}}</h3><p>{{.Message}}</p><dl class="job-meta"><dt>Reference</dt><dd>{{.ID}}</dd><dt>Scheduled time (UTC)</dt><dd>{{.DueUTC}}</dd><dt>Repeat</dt><dd>{{if .IntervalSeconds}}Every {{.IntervalSeconds}} seconds{{else}}Once{{end}}</dd><dt>Last HTTP status</dt><dd>{{if .HTTPStatus}}{{.HTTPStatus}}{{else}}None recorded{{end}}</dd>{{if .LastError}}<dt>Delivery error</dt><dd>{{.LastError}}</dd>{{end}}</dl><details><summary>Agent context</summary><pre class="agent-context">{{printf "%s" .Context}}</pre></details>{{if eq .Status "pending"}}<form hx-boost="false" method="post" action="/agent/{{.ID}}/cancel" class="card-footer"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="text-button">Cancel schedule</button></form>{{end}}</article>{{else}}<div class="empty"><h3>No agent schedules yet</h3><p>Generate an API token in Agent API settings, then give the skill to your local agent. Polling requires no callback URL.</p></div>{{end}}</div>
+<div class="jobs">{{range .AgentTasks}}<article class="job-card"><div class="card-top"><span>{{.Kind}}</span><span class="badge">{{.Status}}</span></div><h3>{{.Title}}</h3><p>{{.Message}}</p><dl class="job-meta"><dt>Reference</dt><dd>{{.ID}}</dd><dt>Scheduled time (UTC)</dt><dd>{{.DueUTC}}</dd><dt>Repeat</dt><dd>{{if .IntervalSeconds}}Every {{.IntervalSeconds}} seconds{{else}}Once{{end}}</dd><dt>Last HTTP status</dt><dd>{{if .HTTPStatus}}{{.HTTPStatus}}{{else}}None recorded{{end}}</dd>{{if .LastError}}<dt>Delivery error</dt><dd>{{.LastError}}</dd>{{end}}</dl><details><summary>Agent context</summary><pre class="agent-context">{{printf "%s" .Context}}</pre></details>{{if eq .Status "pending"}}<form hx-boost="false" method="post" action="/agent/{{.ID}}/cancel" class="card-footer"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="text-button">Cancel schedule</button></form>{{end}}</article>{{else}}<div class="empty"><h3>No agent schedules yet</h3><p>Connect your agent through MCP in Agent API settings, then ask it to create a reminder.</p></div>{{end}}</div>
 {{else if eq .Page "agent-settings"}}
-<div class="page-heading"><div><p class="eyebrow">SETTINGS / AGENT CONNECTION</p><h1>Agent API<span class="accent">.</span></h1><p class="muted">Install the skill, generate a token, and let your agent configure the connection.</p></div></div>
+<div class="page-heading agent-heading">
+    <div><p class="eyebrow">SETTINGS / AI AGENTS</p><h1>Connect your agent<span class="accent">.</span></h1><p class="muted">Give your agent reminders, timers and automations.</p></div>
+    <a class="run-button" href="/agent">View agent schedules →</a>
+</div>
+{{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+{{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
+<div class="agent-layout">
+    <section class="panel agent-onboarding" id="setup-guide" aria-labelledby="agent-setup-title">
+        <div class="agent-section-heading"><p class="eyebrow">GET STARTED</p><h2 id="agent-setup-title">Set up your agent</h2><p class="muted">Connect once, then ask your agent to schedule work for you.</p></div>
+        <ol class="agent-steps">
+            <li><div class="agent-step-content"><h3>Add SchedulerSE to your agent</h3><p>Add a remote MCP server in your agent’s connection settings using this endpoint.</p><label>MCP server URL<input readonly value="/api/agent/v1/mcp" data-mcp-url autocomplete="off" spellcheck="false"></label><small>Transport: Streamable HTTP. Authentication: Bearer token.</small></div></li>
+            <li id="agent-token"><div class="agent-step-content"><h3>Give your agent an API token</h3>
+                {{if .NewAgentToken}}<p>Save this token in your agent’s private credential input or secret store.</p><div class="agent-token-reveal"><label>Your new API token<input readonly value="{{.NewAgentToken}}" autocomplete="off" spellcheck="false" aria-label="New API token"></label><small>Shown once. Save it before leaving this page.</small></div>
+                {{else if .HasAgentToken}}<p><span class="agent-inline-status"><span class="dot"></span>API token active</span></p><p>Use the token you saved in your agent’s private credential input. Manage an existing token under Advanced options below.</p>
+                {{else}}<p>Create a token and save it in your agent’s private credential input or secret store.</p><form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="generate"><button class="primary">Generate API token →</button></form>{{end}}
+                <small>Tokens grant access to reminders, delivery settings and HTTP POST/Bash automations. Share only with trusted agents.</small>
+            </div></li>
+            <li><div class="agent-step-content"><h3>Ask your agent to connect</h3><p>Add the token to the MCP connection’s Authorization header as <code>Bearer &lt;token&gt;</code>, then ask your agent:</p><blockquote class="agent-prompt">Use SchedulerSE to configure reminder delivery and send me a test reminder in one minute.</blockquote><p>Reminder delivery uses a running local bridge or a webhook receiver. Your agent can read the setup guides directly through MCP. Confirm the test reaches your intended conversation.</p></div></li>
+        </ol>
+    </section>
+    <aside class="agent-sidebar">
+        <section class="panel stack agent-connection" aria-labelledby="agent-status-title"><div><p class="eyebrow">CURRENT SETTINGS</p><h2 id="agent-status-title">Connection overview</h2></div>
+            <dl class="agent-status-list"><div><dt>API access</dt><dd><span class="dot {{if not .HasAgentToken}}amber{{end}}"></span>{{if .HasAgentToken}}Token active{{else}}Token needed{{end}}</dd></div><div><dt>Reminder delivery</dt><dd>{{if eq .AgentSettings.DeliveryMode "webhook"}}Webhook{{else}}Local agent · polling{{end}}</dd></div>{{if eq .AgentSettings.DeliveryMode "webhook"}}<div><dt>Destination</dt><dd>{{if .AgentSettings.WebhookURL}}URL saved{{else}}URL needed{{end}}</dd></div>{{end}}</dl>
+            <p class="agent-status-caption">Saved configuration. Verify a reminder with your agent to confirm delivery.</p>
+        </section>
+        <section class="agent-tips"><h2>Ready for the next task</h2><ul><li>“Remind me to review the report tomorrow.”</li><li>“Run my saved automation now.”</li><li>“Schedule this script every morning.”</li></ul><p>Keep the bridge and agent runtime running for local reminders.</p></section>
+    </aside>
+</div>
+<div class="agent-resources">
+    <details class="panel agent-disclosure"><summary><span>Reminder delivery kit<small>Standalone bridge and setup guides</small></span></summary><div class="agent-disclosure-body stack"><p class="muted">Your agent can fetch bridge files and setup guides through MCP. For a manual installation, download this ZIP and extract it on the agent host. It includes the standalone Python bridge, delivery guides and service address.</p><a class="run-button" hx-boost="false" href="/settings/agent/delivery.zip" data-agent-delivery>Download delivery kit ↓</a></div></details>
+    <details class="panel agent-disclosure" {{if .Error}}open{{end}}><summary><span>Advanced options<small>MCP configuration, delivery and API token management</small></span></summary><div class="agent-disclosure-body">
+        <section class="stack"><h2>MCP client configuration</h2><p class="muted">For MCP clients that accept JSON configuration with URL and header fields, use this template. Store the actual token privately in your client.</p><pre class="guide-reference" data-mcp-config>{"mcpServers":{"schedulerse":{"url":"/api/agent/v1/mcp","headers":{"Authorization":"Bearer YOUR_API_TOKEN"}}}}</pre></section>
+        <section class="stack agent-token-management"><div><h2>Reminder delivery</h2><p class="muted">Your agent can configure this during setup. Change it here for a custom integration.</p></div>
+            <form hx-boost="false" class="stack" method="post" action="/settings/agent"><input type="hidden" name="csrf" value="{{.CSRF}}">
+                <label>Delivery method<select name="delivery_mode"><option value="poll" {{if eq .AgentSettings.DeliveryMode "poll"}}selected{{end}}>Local agent (polling)</option><option value="webhook" {{if eq .AgentSettings.DeliveryMode "webhook"}}selected{{end}}>Webhook</option></select></label>
+                <div class="stack" data-webhook-fields><label>Webhook URL<input type="url" name="webhook_url" value="{{.AgentSettings.WebhookURL}}" maxlength="2048" placeholder="https://agent.example.com/hooks/reminder"><small>Use HTTPS outside localhost. Leave blank to pause webhook callbacks.</small></label>
+                <label>Webhook Authorization header<input type="password" name="webhook_authorization" autocomplete="new-password" maxlength="8192" placeholder="{{if .HasWebhookAuth}}Saved header · leave blank to keep{{else}}Bearer your-webhook-secret{{end}}"><small>Use a separate secret verified by the receiver.</small></label>{{if .HasWebhookAuth}}<label class="check"><input type="checkbox" name="clear_webhook_authorization">Remove saved webhook authorization</label>{{end}}</div>
+                <button class="primary">Save delivery settings →</button>
+            </form><small>Delivery settings are shared by this installation. Webhook receivers must accept events within 10 seconds; callbacks are attempted once.</small>
+        </section>
+        {{if .HasAgentToken}}<section class="stack agent-token-management"><div><h2>Manage API token</h2><p class="muted">Replacing or revoking immediately invalidates the current token. Existing schedules remain active.</p></div><div class="agent-token-actions"><form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="generate"><button class="run-button">Replace API token</button></form><form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="revoke"><button class="agent-revoke">Revoke API token</button></form></div></section>{{end}}
+    </div></details>
+    <details class="panel agent-disclosure"><summary><span>Connection help<small>Local agents, Docker and T3 delivery</small></span></summary><div class="agent-disclosure-body agent-help-grid">
+        <section><h3>Local agent</h3><p>Run the bundled Python bridge alongside your agent, with persistent bridge state and the agent’s credentials. The bridge polls for due reminders and invokes the agent.</p></section>
+        <section><h3>Docker</h3><p>On the Compose network, use <code>http://schedulerse:8789</code>. A bridge on the host uses the published service address. Install the agent runtime where the bridge runs.</p></section>
+        <section><h3>T3 conversations</h3><p>Use a reachable native T3 webhook for reminders in a T3 thread. Follow the T3 guide included in the delivery kit.</p></section>
+        <section><h3>A reminder is still pending?</h3><p>Check that the bridge is running, the token is valid and the service is reachable. Download the delivery kit again if the service address changed. Inspect <a href="/agent">Agent schedules</a> for delivery results.</p></section>
+    </div></details>
+    <details class="panel agent-disclosure"><summary><span>API reference<small>Endpoints and examples for custom integrations</small></span></summary><div class="agent-disclosure-body stack"><p class="muted">Use <code>/api/agent/v1</code> with your API token. Your agent can also read this reference through the authenticated API.</p><a class="run-button" hx-boost="false" href="/settings/agent/guide.md">Download Markdown guide ↓</a><pre class="guide-reference">{{.AgentGuide}}</pre></div></details>
+</div>
+{{else if eq .Page "settings"}}
+<a class="back" href="/">← All automations</a>
+<div class="page-heading"><div><p class="eyebrow">SETTINGS / GENERAL</p><h1>General settings<span class="accent">.</span></h1><p class="muted">Defaults for your schedules, executions and browser connection.</p></div></div>
 {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}{{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
-{{if .NewAgentToken}}<div class="panel stack"><label>Your new API token<input readonly value="{{.NewAgentToken}}" autocomplete="off" aria-label="New API token"></label><p>Save this token in your agent’s secret store now. It cannot be displayed again.</p></div>{{end}}
-<div class="editor"><section class="panel stack" id="setup-guide"><h2>Agent setup guide</h2><p class="muted">Connect in three steps.</p><ol class="setup-steps">
-<li><strong>Generate an API token.</strong><p>Generate a token in the <a href="#agent-token">API token panel</a> and save it privately. It is shown only once.</p></li>
-<li><strong>Install the downloaded skill.</strong><p><a class="run-button" hx-boost="false" href="/settings/agent/skill.zip" data-agent-skill>Download agent skill</a></p><p>Extract the ZIP and install the <code>schedulerse-agent</code> folder in your agent’s skill directory. The download includes the service address used in this browser, including HTTP/HTTPS and port.</p></li>
-<li><strong>Ask your agent to connect.</strong><p>Provide the API token through its private credential input or secret store. Ask: “Use the SchedulerSE skill to connect and verify a reminder.” The agent configures delivery and checks a test reminder. No manual webhook setup is needed for local polling.</p></li>
-</ol><p class="note">Keep the chosen agent runtime running. Tokens control this installation’s shared agent schedules and delivery connection.</p></section><aside class="panel stack" id="agent-token"><h2>API token</h2><p>{{if .HasAgentToken}}An API token is active.{{else}}No API token is active.{{end}} Tokens can manage agent schedules and their delivery connection.</p><form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="generate"><button class="primary">{{if .HasAgentToken}}Replace API token{{else}}Generate API token{{end}}</button></form>{{if .HasAgentToken}}<form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="revoke"><button class="text-button">Revoke API token</button></form>{{end}}<p class="note">Replacing or revoking immediately invalidates the old token. Existing schedules remain active; cancel them in Agent schedules.</p><p><a href="#setup-guide">Back to setup instructions ↑</a></p></aside></div>
-<section class="panel stack manual-run guide-help"><h2>Choose where reminders arrive</h2><p><strong>Local agent:</strong> the bridge polls SchedulerSE and invokes your installed agent. It needs no public callback URL or Cloudflare account. Keep the bridge and agent runtime available, with persistent state.</p><p><strong>Docker:</strong> the agent uses the bundled address when reachable. On a shared Docker network it can use the known service name. A bridge on the host uses the published service address; it does not need an inbound port.</p><p><strong>T3 thread:</strong> use its native webhook when available. A standalone Codex CLI turn saves output locally or resumes an explicit CLI session; it does not automatically post into T3.</p><h2>Check the connection</h2><p>Ask for a short test reminder, then inspect <a href="/agent">Agent schedules</a> and confirm the agent actually receives it. “Delivered” means the receiver accepted it, not that the AI finished its work.</p><p>If reminders remain pending, check that the bridge is running, the token is valid, and the agent can reach the service address. If the service moved, download the skill again from the new address.</p></section>
-<section class="panel stack manual-run"><details><summary>Manual delivery settings (optional)</summary><form hx-boost="false" class="stack" method="post" action="/settings/agent"><input type="hidden" name="csrf" value="{{.CSRF}}"><label>Delivery method<select name="delivery_mode"><option value="poll" {{if eq .AgentSettings.DeliveryMode "poll"}}selected{{end}}>Local agent (polling)</option><option value="webhook" {{if eq .AgentSettings.DeliveryMode "webhook"}}selected{{end}}>Webhook</option></select></label><label>Webhook URL (webhook mode only)<input type="url" name="webhook_url" value="{{.AgentSettings.WebhookURL}}" maxlength="2048" placeholder="https://agent.example.com/hooks/reminder"><small>Unused in polling mode. In webhook mode, HTTPS is required outside localhost; leave blank to pause callbacks.</small></label><label>Webhook Authorization header<input type="password" name="webhook_authorization" autocomplete="new-password" maxlength="8192" placeholder="{{if .HasWebhookAuth}}Saved header · leave blank to keep{{else}}Bearer your-separate-webhook-secret{{end}}"><small>Your receiver should verify this separate secret before waking the agent.</small></label>{{if .HasWebhookAuth}}<label class="check"><input type="checkbox" name="clear_webhook_authorization">Remove saved webhook authorization</label>{{end}}<button class="primary">Save delivery settings →</button></form><p class="note">Polling keeps reminders pending until an agent durably picks them up. Delivery means acceptance by the bridge or webhook, not completion by the AI. Webhook callbacks are attempted once, with a 10-second timeout.</p></details></section>
-<section class="panel stack manual-run"><h2>API reference</h2><p>For custom integrations, use <code>/api/agent/v1</code> with the API token. The same complete reference is available to agents through the authenticated API.</p><p><a class="run-button" hx-boost="false" href="/settings/agent/guide.md">Download Markdown guide</a></p><details><summary>Read the complete API reference</summary><pre class="guide-reference">{{.AgentGuide}}</pre></details></section>
+<form hx-boost="false" method="post" action="/settings" class="panel stack general-settings"><input type="hidden" name="csrf" value="{{.CSRF}}">
+<h2>Task defaults</h2>
+<label>Default timezone<select name="timezone">{{range .Timezones}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select><small>Used by new tasks and schedules without a saved timezone. Each task can choose its own.</small></label>
+<label>Default execution timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100" max="600000" step="1" value="{{.AppSettings.TimeoutMS}}" required><small>100–600000 ms. Applies to new runs whose task timeout is blank.</small></label>
+<details class="advanced-options" {{if .Error}}open{{end}}><summary>Advanced options<small>Browser security</small></summary><div class="stack advanced-options-fields"><label class="check"><input type="checkbox" name="cookie_secure" {{if .AppSettings.CookieSecure}}checked{{end}}>Use secure cookies</label><small>Enable when accessing SchedulerSE over HTTPS. Applies immediately to this browser and to future sign-ins.</small></div></details>
+<button class="primary">Save settings →</button>
+</form>
 {{else if eq .Page "telegram"}}
         <a class="back" href="/">← All automations</a>
         <div class="page-heading">
@@ -277,24 +327,30 @@
                         placeholder="daily-report"><small>Lowercase letters, digits and hyphens. This cannot be changed
                         later.</small></label>{{end}}
                 <label>Name<input name="name" value="{{.Job.Name}}" maxlength="100" required
-                        placeholder="Daily report"></label><label>Endpoint URL<input name="url" type="url"
-                        value="{{.Job.URL}}" required placeholder="https://example.com/api/tasks"><small>HTTPS endpoint
+                        placeholder="Daily report"></label>
+                <label>Task type<select name="kind"><option value="http" {{if ne .Job.Kind "bash"}}selected{{end}}>HTTP POST</option><option value="bash" {{if eq .Job.Kind "bash"}}selected{{end}}>Bash script</option></select></label>
+                <label>Bash script<textarea name="script" rows="10" maxlength="65536" spellcheck="false">{{.Job.Script}}</textarea><small>For Bash tasks. Runs inside the service container as its user. Exit 0 means success; output is discarded. HTTP fields, retries and fallback apply only to HTTP tasks; leave recovery disabled for scripts.</small></label>
+                <label>Endpoint URL<input name="url" type="url"
+                        value="{{.Job.URL}}" placeholder="https://example.com/api/tasks"><small>HTTPS endpoint
                         receiving a POST for each request attempt.</small></label>
-                <label>Request timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100"
-                        max="600000" step="1" value="{{if .Job.TimeoutMS}}{{.Job.TimeoutMS}}{{end}}"
-                        placeholder="{{.DefaultTimeoutMS}}"><small>100–600000 ms (up to 10 minutes). Leave blank to use
-                        the server default: {{.DefaultTimeoutMS}} ms. Applies to scheduled and manual
-                        runs.</small></label>
                 <label>Authorization header<input name="authorization" type="password" autocomplete="new-password"
                         maxlength="8192"
                         placeholder="{{if .HasAuthorization}}Stored header · leave blank to keep{{else}}Bearer … (optional){{end}}"><small>Enter
                         the full header value. Stored values are never displayed.</small></label>{{if
                 .HasAuthorization}}<label class="check"><input type="checkbox" name="clear_authorization">Remove the
                     stored authorization header</label>{{end}}
-                <label>JSON body<textarea name="body" rows="6" required
+                <label>JSON body<textarea name="body" rows="6"
                         spellcheck="false">{{printf "%s" .Job.Body}}</textarea><small>{{if eq .Job.Policy "generic"}}A
                         JSON object. Values keep their original types.{{else}}This saved task has legacy payload
                         validation.{{end}}</small></label>
+                <details class="advanced-options" {{if .Error}}open{{end}}>
+                    <summary>Advanced options<small>Timeout, retries and fallback</small></summary>
+                    <div class="stack advanced-options-fields">
+                <label>Execution timeout (milliseconds)<input name="request_timeout_ms" type="number" min="100"
+                        max="600000" step="1" value="{{if .Job.TimeoutMS}}{{.Job.TimeoutMS}}{{end}}"
+                        placeholder="{{.DefaultTimeoutMS}}"><small>100–600000 ms (up to 10 minutes). Leave blank to use
+                        the server default: {{.DefaultTimeoutMS}} ms. Applies to scheduled and manual
+                        runs.</small></label>
                 <h2>Retries and fallback</h2><input type="hidden" name="recovery_settings" value="1">
                 <label>Retries after failure<input name="retry_count" type="number" min="0" max="5" step="1"
                         value="{{.Job.RetryCount}}"><small>0 disables retries. Up to 5 extra attempts after HTTP 429 or
@@ -320,6 +376,8 @@
                     configured retries and fallback after timeouts, network errors, redirects or unreadable responses.
                     The original POST may already have completed; another attempt can duplicate its effects. Off by
                     default.</small>
+                    </div>
+                </details>
             </section>
             <aside class="panel stack">
                 <h2>When it runs</h2>
@@ -371,8 +429,7 @@
                     scheduled runs</label>
                 <p class="muted">Run now works even when scheduled runs are disabled. New automations start disabled.
                 </p>
-                <div class="note">Telegram messages follow the notification types selected in settings. Request retries
-                    follow this task’s recovery settings. Telegram sends are never retried automatically.</div><button
+                <div class="note">Manage Telegram alerts in notification settings.</div><button
                     class="primary">Save automation <span>→</span></button><a class="cancel" href="/">Cancel</a>
             </aside>
         </form>

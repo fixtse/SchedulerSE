@@ -107,7 +107,7 @@ func (s *Store) Seed(jobs []domain.Job) error {
 		return nil
 	}
 	for _, j := range jobs {
-		if _, err = tx.Exec(`INSERT INTO jobs(id,name,url,authorization,body,cron,enabled,policy,timezone,request_timeout_ms,retry_count,retry_delay_ms,retry_uncertain,fallback_url,fallback_authorization) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, j.ID, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Policy, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth); err != nil {
+		if _, err = tx.Exec(`INSERT INTO jobs(id,name,url,authorization,body,cron,enabled,policy,timezone,request_timeout_ms,retry_count,retry_delay_ms,retry_uncertain,fallback_url,fallback_authorization,kind,script) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, j.ID, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Policy, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth, j.Kind, j.Script); err != nil {
 			return err
 		}
 	}
@@ -147,12 +147,12 @@ func (s *Store) Health() error {
 	return s.DB.QueryRow("SELECT count(*) FROM metadata").Scan(&n)
 }
 
-const jobColumns = "id,name,url,authorization,body,cron,enabled,policy,revision,timezone,request_timeout_ms,retry_count,retry_delay_ms,retry_uncertain,fallback_url,fallback_authorization"
+const jobColumns = "id,name,url,authorization,body,cron,enabled,policy,revision,timezone,request_timeout_ms,retry_count,retry_delay_ms,retry_uncertain,fallback_url,fallback_authorization,kind,script"
 
 func scanJob(row interface{ Scan(...any) error }) (domain.Job, error) {
 	var j domain.Job
 	var body string
-	err := row.Scan(&j.ID, &j.Name, &j.URL, &j.Authorization, &body, &j.Cron, &j.Enabled, &j.Policy, &j.Revision, &j.Timezone, &j.TimeoutMS, &j.RetryCount, &j.RetryDelayMS, &j.RetryUncertain, &j.FallbackURL, &j.FallbackAuth)
+	err := row.Scan(&j.ID, &j.Name, &j.URL, &j.Authorization, &body, &j.Cron, &j.Enabled, &j.Policy, &j.Revision, &j.Timezone, &j.TimeoutMS, &j.RetryCount, &j.RetryDelayMS, &j.RetryUncertain, &j.FallbackURL, &j.FallbackAuth, &j.Kind, &j.Script)
 	j.Body = []byte(body)
 	return j, err
 }
@@ -180,10 +180,10 @@ var ErrConflict = errors.New("job changed in another session; reload before savi
 
 func (s *Store) Save(j domain.Job, create bool) error {
 	if create {
-		_, err := s.DB.Exec(`INSERT INTO jobs(id,name,url,authorization,body,cron,enabled,policy,timezone,request_timeout_ms,retry_count,retry_delay_ms,retry_uncertain,fallback_url,fallback_authorization) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, j.ID, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Policy, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth)
+		_, err := s.DB.Exec(`INSERT INTO jobs(id,name,url,authorization,body,cron,enabled,policy,timezone,request_timeout_ms,retry_count,retry_delay_ms,retry_uncertain,fallback_url,fallback_authorization,kind,script) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, j.ID, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Policy, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth, j.Kind, j.Script)
 		return err
 	}
-	result, err := s.DB.Exec(`UPDATE jobs SET name=?,url=?,authorization=?,body=?,cron=?,enabled=?,timezone=?,request_timeout_ms=?,retry_count=?,retry_delay_ms=?,retry_uncertain=?,fallback_url=?,fallback_authorization=?,revision=revision+1 WHERE id=? AND revision=? AND policy=?`, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth, j.ID, j.Revision, j.Policy)
+	result, err := s.DB.Exec(`UPDATE jobs SET name=?,url=?,authorization=?,body=?,cron=?,enabled=?,timezone=?,request_timeout_ms=?,retry_count=?,retry_delay_ms=?,retry_uncertain=?,fallback_url=?,fallback_authorization=?,kind=?,script=?,revision=revision+1 WHERE id=? AND revision=? AND policy=?`, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth, j.Kind, j.Script, j.ID, j.Revision, j.Policy)
 	if err != nil {
 		return err
 	}

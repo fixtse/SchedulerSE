@@ -41,8 +41,23 @@ func (r *Runner) Prepare(ctx context.Context, j domain.Job, slot string) (func()
 	if ctx.Err() != nil {
 		return nil, nil
 	}
-	if j.TimeoutMS == 0 {
-		j.TimeoutMS = int(r.Timeout / time.Millisecond)
+	if j.TimeoutMS == 0 || j.Timezone == "" {
+		settings := domain.AppSettings{TimeoutMS: int(r.Timeout / time.Millisecond)}
+		if defaults, ok := r.Store.(interface {
+			ExecutionDefaults(time.Duration) (domain.AppSettings, error)
+		}); ok {
+			var err error
+			settings, err = defaults.ExecutionDefaults(r.Timeout)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if j.TimeoutMS == 0 {
+			j.TimeoutMS = settings.TimeoutMS
+		}
+		if j.Timezone == "" {
+			j.Timezone = settings.Timezone
+		}
 	}
 	ok, err := r.Store.Begin(j, slot)
 	if err != nil {
@@ -102,6 +117,7 @@ func (r *Runner) execute(ctx context.Context, j domain.Job, slot string) (*domai
 		alert = "Task completed successfully: " + j.Name + "\nTask ID: " + j.ID
 	}
 	if alert != "" {
+		alert = executionAlert(alert, j, slot, started, time.Now(), outcome)
 		alertCtx, stop := context.WithTimeout(ctx, 15*time.Second)
 		err := r.Notifications.Notify(alertCtx, kind, alert)
 		stop()

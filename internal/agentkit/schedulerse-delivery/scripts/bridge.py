@@ -209,7 +209,7 @@ def dispatch(db, state, config):
 def packaged_service_url():
     metadata = Path(__file__).resolve().parents[1] / "connection.json"
     if not metadata.is_file():
-        raise ValueError("Download the skill from your service or provide --scheduler-url")
+        raise ValueError("Download the delivery kit from your service or provide --scheduler-url")
     document = json.loads(metadata.read_text())
     value = document.get("service_url") if isinstance(document, dict) else None
     if not isinstance(value, str):
@@ -282,7 +282,7 @@ def main():
     init = subs.add_parser("init", help="Generate private relay connection files")
     init.add_argument("--relay-url", required=True)
     local = subs.add_parser("init-local", help="Connect directly to SchedulerSE; no webhook server or relay")
-    local.add_argument("--scheduler-url", help="Override the service address bundled in the downloaded skill")
+    local.add_argument("--scheduler-url", help="Override the service address bundled in the delivery kit")
     local.add_argument("--token-file", help="Private API token file; otherwise prompt without echo")
     for setup in (init, local):
         setup.add_argument("--workdir", required=True)

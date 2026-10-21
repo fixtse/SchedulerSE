@@ -105,6 +105,11 @@ func run() error {
 		return err
 	}
 	defer store.DB.Close()
+	settings, err := store.ImportAppSettings(c)
+	if err != nil {
+		return err
+	}
+	c.Timezone, c.Timeout, c.CookieSecure = settings.Timezone, time.Duration(settings.TimeoutMS)*time.Millisecond, settings.CookieSecure
 	if err = store.ImportTelegram(c.TelegramToken, c.TelegramChat); err != nil {
 		return err
 	}
@@ -226,7 +231,14 @@ func preview(c adapters.Config) error {
 			return err
 		}
 		if seeded != 0 {
-			jobs, err = (&adapters.Store{DB: db}).Jobs()
+			stored := &adapters.Store{DB: db}
+			settings, settingsErr := stored.AppSettings()
+			if settingsErr == nil {
+				c.Timezone, c.Timeout, c.CookieSecure = settings.Timezone, time.Duration(settings.TimeoutMS)*time.Millisecond, settings.CookieSecure
+			} else if !errors.Is(settingsErr, sql.ErrNoRows) {
+				return settingsErr
+			}
+			jobs, err = stored.Jobs()
 			if err != nil {
 				return err
 			}

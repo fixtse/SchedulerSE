@@ -1,4 +1,4 @@
-package skills
+package agentkit
 
 import (
 	"archive/zip"
@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-func TestAgentArchiveIsSelfContainedAndExcludesRuntimeSecrets(t *testing.T) {
-	data, err := AgentArchive()
+func TestDeliveryArchiveIsSelfContainedAndExcludesRuntimeSecrets(t *testing.T) {
+	data, err := DeliveryArchive()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,15 +19,15 @@ func TestAgentArchiveIsSelfContainedAndExcludesRuntimeSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	required := map[string]bool{
-		"SKILL.md": false, "scripts/bridge.py": false, "references/t3.md": false,
+		"README.md": false, "scripts/bridge.py": false, "references/t3.md": false,
 		"references/cloudflare.md": false, "references/local.md": false, "assets/cloudflare/worker.mjs": false,
 		"assets/cloudflare/schema.sql": false, "assets/cloudflare/wrangler.json": false,
 	}
 	for _, file := range archive.File {
-		if !strings.HasPrefix(file.Name, "schedulerse-agent/") || strings.Contains(file.Name, "..") {
+		if !strings.HasPrefix(file.Name, "schedulerse-delivery/") || strings.Contains(file.Name, "..") {
 			t.Fatal("unsafe archive path", file.Name)
 		}
-		name := strings.TrimPrefix(file.Name, "schedulerse-agent/")
+		name := strings.TrimPrefix(file.Name, "schedulerse-delivery/")
 		if _, ok := required[name]; !ok {
 			t.Fatal("unexpected file bundled; check for local state or secrets", file.Name)
 		}
@@ -40,9 +40,9 @@ func TestAgentArchiveIsSelfContainedAndExcludesRuntimeSecrets(t *testing.T) {
 	}
 }
 
-func TestPersonalizedSkillIncludesOriginWithoutCredentials(t *testing.T) {
+func TestPersonalizedKitIncludesOriginWithoutCredentials(t *testing.T) {
 	origin := "https://192.0.2.5:9443"
-	data, err := AgentArchiveForOrigin(origin)
+	data, err := DeliveryArchiveForOrigin(origin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestPersonalizedSkillIncludesOriginWithoutCredentials(t *testing.T) {
 	}
 	foundMetadata, foundInstructions := false, false
 	for _, file := range archive.File {
-		if file.Name != "schedulerse-agent/connection.json" && file.Name != "schedulerse-agent/SKILL.md" {
+		if file.Name != "schedulerse-delivery/connection.json" && file.Name != "schedulerse-delivery/README.md" {
 			continue
 		}
 		reader, err := file.Open()
@@ -64,9 +64,9 @@ func TestPersonalizedSkillIncludesOriginWithoutCredentials(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if file.Name == "schedulerse-agent/connection.json" {
+		if file.Name == "schedulerse-delivery/connection.json" {
 			var metadata map[string]string
-			if json.Unmarshal(body, &metadata) != nil || metadata["service_url"] != origin || metadata["api_base"] != origin+"/api/agent/v1" || len(metadata) != 2 {
+			if json.Unmarshal(body, &metadata) != nil || metadata["service_url"] != origin || metadata["api_base"] != origin+"/api/agent/v1" || metadata["mcp_url"] != origin+"/api/agent/v1/mcp" || metadata["mcp_transport"] != "streamable-http" || len(metadata) != 4 {
 				t.Fatal("incorrect connection metadata", string(body))
 			}
 			foundMetadata = true
@@ -76,5 +76,19 @@ func TestPersonalizedSkillIncludesOriginWithoutCredentials(t *testing.T) {
 	}
 	if !foundMetadata || !foundInstructions {
 		t.Fatal("personalized connection instructions missing")
+	}
+}
+
+func TestDeliveryFilesExcludeSkillAndTraversal(t *testing.T) {
+	for _, name := range []string{"SKILL.md", "../bundle.go", "/etc/passwd", "references/../../bundle.go", "missing.txt"} {
+		if _, err := DeliveryFile(name, "https://scheduler.example.com"); err == nil {
+			t.Fatalf("unexpected file available: %s", name)
+		}
+	}
+	for _, name := range []string{"README.md", "scripts/bridge.py", "references/local.md", "connection.json"} {
+		data, err := DeliveryFile(name, "https://scheduler.example.com")
+		if err != nil || len(data) == 0 {
+			t.Fatalf("missing delivery file %s: %v", name, err)
+		}
 	}
 }

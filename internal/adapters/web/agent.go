@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/fixtse/SchedulerSE/internal/adapters"
+	"github.com/fixtse/SchedulerSE/internal/agentkit"
 	"github.com/fixtse/SchedulerSE/internal/domain"
-	"github.com/fixtse/SchedulerSE/skills"
 )
 
 //go:embed agent-guide.md
@@ -36,7 +36,7 @@ func agentError(w http.ResponseWriter, status int, message string) {
 	agentJSON(w, status, map[string]string{"error": message})
 }
 
-// Bearer tokens manage agent schedules and delivery, not unrelated application settings.
+// Bearer tokens manage agent schedules, automations and delivery.
 // Browser sessions do not authorize this API.
 func (s *Server) agentAPI(w http.ResponseWriter, r *http.Request) {
 	settings, err := s.Store.AgentSettings()
@@ -50,12 +50,27 @@ func (s *Server) agentAPI(w http.ResponseWriter, r *http.Request) {
 		agentError(w, 401, "A valid agent API token is required")
 		return
 	}
+	if r.URL.Path == "/api/agent/v1/mcp" {
+		s.serveMCP(w, r)
+		return
+	}
+	s.agentRoutes(w, r)
+}
+
+// agentRoutes is shared by authenticated REST and MCP calls. It performs all
+// validation and durable mutations without making a loopback HTTP request.
+func (s *Server) agentRoutes(w http.ResponseWriter, r *http.Request) {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/agent/v1/runs", s.agentRuns)
+	mux.HandleFunc("GET /api/agent/v1/automations", s.agentAutomations)
+	mux.HandleFunc("POST /api/agent/v1/automations", s.agentAutomations)
+	mux.HandleFunc("GET /api/agent/v1/automations/{id}", s.agentAutomation)
+	mux.HandleFunc("POST /api/agent/v1/automations/{id}/run", s.agentRunAutomation)
 	mux.HandleFunc("GET /api/agent/v1/inbox", s.agentInbox)
 	mux.HandleFunc("POST /api/agent/v1/inbox/{id}/ack", s.agentPickup)
 	mux.HandleFunc("GET /api/agent/v1/connection", s.agentConnection)
 	mux.HandleFunc("PUT /api/agent/v1/connection", s.agentConnection)
-	mux.HandleFunc("GET /api/agent/v1/skill.zip", s.serveAgentSkill)
+	mux.HandleFunc("GET /api/agent/v1/delivery.zip", s.serveAgentDelivery)
 	mux.HandleFunc("GET /api/agent/v1/guide", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		_, _ = io.WriteString(w, agentGuide)
@@ -267,19 +282,19 @@ func (s *Server) agentToken(w http.ResponseWriter, r *http.Request, csrf, user s
 	s.renderAgentSettings(w, 200, csrf, user, token, notice, "")
 }
 
-func (s *Server) serveAgentSkill(w http.ResponseWriter, r *http.Request) {
-	origin, err := s.agentSkillOrigin(r)
+func (s *Server) serveAgentDelivery(w http.ResponseWriter, r *http.Request) {
+	origin, err := s.agentServiceOrigin(r)
 	if err != nil {
 		http.Error(w, "Invalid service origin", 400)
 		return
 	}
-	data, err := skills.AgentArchiveForOrigin(origin)
+	data, err := agentkit.DeliveryArchiveForOrigin(origin)
 	if err != nil {
-		http.Error(w, "Could not prepare skill download", 503)
+		http.Error(w, "Could not prepare delivery kit download", 503)
 		return
 	}
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="schedulerse-agent.zip"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="schedulerse-delivery.zip"`)
 	_, _ = w.Write(data)
 }
 
@@ -335,9 +350,9 @@ func (s *Server) agentPickup(w http.ResponseWriter, r *http.Request) {
 
 // Browser downloads provide location.origin explicitly, preserving the externally
 // visible HTTPS scheme through reverse proxies without trusting forwarded headers.
-func (s *Server) agentSkillOrigin(r *http.Request) (string, error) {
+func (s *Server) agentServiceOrigin(r *http.Request) (string, error) {
 	scheme := "http"
-	if r.TLS != nil || s.Config.CookieSecure {
+	if r.TLS != nil || s.settings().CookieSecure {
 		scheme = "https"
 	}
 	if referer, err := url.Parse(r.Referer()); err == nil && strings.EqualFold(referer.Host, r.Host) && (referer.Scheme == "http" || referer.Scheme == "https") {

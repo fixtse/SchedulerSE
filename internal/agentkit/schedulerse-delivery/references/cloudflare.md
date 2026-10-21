@@ -9,7 +9,7 @@ of unlimited free hosting. A five-second idle poll is about 17,280 requests/day.
 
 The agent performs the following setup; the user only signs into Cloudflare and
 SchedulerSE when authentication is needed. Keep all generated files in a private
-connection directory outside the skill/repository. Python 3 is required for the
+connection directory outside the kit directory. Python 3 is required for the
 bridge and Node/npm plus Wrangler for provisioning. Use an existing Wrangler
 installation or the user's approved package-management workflow.
 
@@ -44,7 +44,7 @@ a fixed local work directory, and a routing label that will be placed in every
 reminder's `context.conversation_id`:
 
 ```sh
-python3 /installed/skill/scripts/bridge.py init \
+python3 /opt/schedulerse-delivery/scripts/bridge.py init \
   --state /private/schedulerse-connection \
   --relay-url https://actual-worker.actual-account.workers.dev \
   --workdir /user/chosen/project \
@@ -87,7 +87,7 @@ agent's secret store.
 Start the bridge in the user's persistent process supervisor:
 
 ```sh
-python3 /installed/skill/scripts/bridge.py run --state /private/schedulerse-connection
+python3 /opt/schedulerse-delivery/scripts/bridge.py run --state /private/schedulerse-connection
 ```
 
 Use the host's service manager (for example a user systemd service or launchd) so

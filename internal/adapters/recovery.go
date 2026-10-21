@@ -28,6 +28,8 @@ func migrateRecovery(db *sql.DB) error {
 		return err
 	}
 	for _, column := range []struct{ name, definition string }{
+		{"kind", "TEXT NOT NULL DEFAULT ''"},
+		{"script", "TEXT NOT NULL DEFAULT ''"},
 		{"retry_count", "INTEGER NOT NULL DEFAULT 0"},
 		{"retry_delay_ms", "INTEGER NOT NULL DEFAULT 0"},
 		{"retry_uncertain", "INTEGER NOT NULL DEFAULT 0"},

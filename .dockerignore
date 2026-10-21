@@ -8,6 +8,4 @@
 !Dockerfile
 !LICENSE
 
-!skills/
-!skills/**
 **/__pycache__/

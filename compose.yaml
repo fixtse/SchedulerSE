@@ -1,7 +1,7 @@
 name: schedulerse
 services:
   schedulerse:
-    image: ${SCHEDULERSE_IMAGE:-ghcr.io/fixtse/schedulerse:latest}
+    image: ghcr.io/fixtse/schedulerse:latest
     pull_policy: always
     restart: unless-stopped
     init: true
@@ -12,12 +12,12 @@ services:
     security_opt: ["no-new-privileges:true"]
     env_file:
       - path: ./.env
-        required: true
+        required: false
     environment:
       DATA_DIR: /data
       LISTEN_ADDR: ":8789"
     ports:
-      - "${MANAGEMENT_BIND:-127.0.0.1}:${MANAGEMENT_PORT:-8789}:8789"
+      - "127.0.0.1:8789:8789"
     volumes:
       - state:/data
     tmpfs:
@@ -30,4 +30,4 @@ services:
       start_period: 5s
 volumes:
   state:
-    name: ${SCHEDULERSE_STATE_VOLUME:-schedulerse_state}
+    name: schedulerse_state

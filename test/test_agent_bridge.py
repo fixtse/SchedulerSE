@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-SOURCE = Path(__file__).resolve().parents[1] / "skills/schedulerse-agent/scripts/bridge.py"
+SOURCE = Path(__file__).resolve().parents[1] / "internal/agentkit/schedulerse-delivery/scripts/bridge.py"
 spec = importlib.util.spec_from_file_location("agent_bridge", SOURCE)
 bridge = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bridge)
@@ -159,11 +159,11 @@ class BridgeTests(unittest.TestCase):
                 bridge.initialize(args, self.state)
         self.assertFalse((self.state / "config.json").exists())
 
-    def test_installed_skill_reads_service_origin_from_adjacent_metadata(self):
-        skill = self.state / "installed-skill"
-        scripts = skill / "scripts"
+    def test_delivery_kit_reads_service_origin_from_adjacent_metadata(self):
+        kit = self.state / "delivery-kit"
+        scripts = kit / "scripts"
         scripts.mkdir(parents=True)
-        metadata = skill / "connection.json"
+        metadata = kit / "connection.json"
         metadata.write_text(json.dumps({"service_url": "http://192.0.2.10:8789"}))
         with patch.object(bridge, "__file__", str(scripts / "bridge.py")):
             self.assertEqual(bridge.packaged_service_url(), "http://192.0.2.10:8789")

@@ -63,6 +63,9 @@ func (h *HTTP) post(ctx context.Context, endpoint, auth string, body []byte) ([]
 	return data, res.StatusCode, nil
 }
 func (h *HTTP) Post(ctx context.Context, j domain.Job) (domain.Response, error) {
+	if j.Kind == "bash" {
+		return runScript(ctx, j)
+	}
 	timeout := h.RequestTimeout
 	if j.TimeoutMS > 0 {
 		timeout = time.Duration(j.TimeoutMS) * time.Millisecond

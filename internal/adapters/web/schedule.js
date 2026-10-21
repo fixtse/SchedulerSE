@@ -13,8 +13,28 @@ function initializePage(root = document) {
     update();
   }
 
-  // Keep exported skill metadata aligned with the address in the user's browser.
-  for (const link of root.querySelectorAll('a[data-agent-skill]')) {
+  const delivery = root.querySelector('[name="delivery_mode"]');
+  if (delivery && !delivery.dataset.deliveryInitialized) {
+    delivery.dataset.deliveryInitialized = 'true';
+    const update = () => {
+      for (const fields of root.querySelectorAll('[data-webhook-fields]')) {
+        fields.hidden = delivery.value !== 'webhook';
+      }
+    };
+    delivery.addEventListener('change', update);
+    update();
+  }
+
+  const mcpURL = new URL('/api/agent/v1/mcp', window.location.origin).href;
+  for (const input of root.querySelectorAll('[data-mcp-url]')) input.value = mcpURL;
+  for (const config of root.querySelectorAll('[data-mcp-config]')) {
+    config.textContent = JSON.stringify({mcpServers: {schedulerse: {
+      url: mcpURL, headers: {Authorization: 'Bearer YOUR_API_TOKEN'}
+    }}}, null, 2);
+  }
+
+  // Keep exported delivery kit metadata aligned with the address in the user's browser.
+  for (const link of root.querySelectorAll('a[data-agent-delivery]')) {
     const download = new URL(link.getAttribute('href'), window.location.href);
     download.searchParams.set('origin', window.location.origin);
     link.href = download.href;

@@ -25,16 +25,15 @@ jobs:
         with:
           go-version: '1.27.2'
           cache: true
-      - name: Verify Go and Compose with the example environment
+      - name: Verify Go and Compose
         run: |
-          cp .env.example .env
           make format-check check test compose-check
       - name: Verify portable agent bridge and Worker syntax
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           python3 -m unittest discover -s test -p 'test_agent_bridge.py'
-          node --check skills/schedulerse-agent/assets/cloudflare/worker.mjs
+          node --check internal/agentkit/schedulerse-delivery/assets/cloudflare/worker.mjs
           node --check internal/adapters/web/schedule.js
           node --check internal/adapters/web/vendor/htmx.min.js
 

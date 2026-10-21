@@ -7,6 +7,8 @@ import (
 )
 
 type Job struct {
+	Kind           string          `json:"kind"`
+	Script         string          `json:"script"`
 	ID             string          `json:"id"`
 	Name           string          `json:"name"`
 	URL            string          `json:"url"`
@@ -39,13 +41,22 @@ type Outcome struct {
 }
 
 type Run struct {
-	Job, Slot, Status, Notification, Started, Finished string
-	JobName, ErrorCode                                 string
-	JobRevision, DurationMS                            int64
-	HTTPStatus, TimeoutMS                              int
-	Attempts                                           int
-	FallbackUsed                                       bool
+	Job          string `json:"job"`
+	Slot         string `json:"slot"`
+	Status       string `json:"status"`
+	Notification string `json:"notification"`
+	Started      string `json:"started"`
+	Finished     string `json:"finished"`
+	JobName      string `json:"job_name"`
+	ErrorCode    string `json:"error_code"`
+	JobRevision  int64  `json:"job_revision"`
+	DurationMS   int64  `json:"duration_ms"`
+	HTTPStatus   int    `json:"http_status"`
+	TimeoutMS    int    `json:"timeout_ms"`
+	Attempts     int    `json:"attempts"`
+	FallbackUsed bool   `json:"fallback_used"`
 }
+
 type Failure struct {
 	Code   string
 	Status int

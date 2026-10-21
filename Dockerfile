@@ -11,7 +11,6 @@ RUN CGO_ENABLED=1 go build -trimpath github.com/mattn/go-sqlite3
 FROM dependencies AS build
 COPY cmd ./cmd
 COPY internal ./internal
-COPY skills ./skills
 RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/schedulerse ./cmd/schedulerse
 
 FROM build AS test
@@ -21,12 +20,13 @@ FROM alpine:3.24 AS runtime
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/fixtse/SchedulerSE"
 LABEL org.opencontainers.image.description="SchedulerSE: lightweight scheduling with authenticated job management"
-RUN apk add --no-cache ca-certificates \
+RUN apk add --no-cache ca-certificates bash \
     && addgroup -g 1000 schedulerse && adduser -D -u 1000 -G schedulerse schedulerse \
     && mkdir -p /data /app && chown schedulerse:schedulerse /data
 COPY --from=build /out/schedulerse /app/schedulerse
 COPY LICENSE /usr/share/licenses/schedulerse/LICENSE
 COPY internal/adapters/web/vendor/htmx-LICENSE /usr/share/licenses/htmx/LICENSE
+COPY internal/adapters/web/vendor/mcp-go-sdk/LICENSE /usr/share/licenses/mcp-go-sdk/LICENSE
 ENV DATA_DIR=/data LISTEN_ADDR=:8789
 USER 1000:1000
 EXPOSE 8789

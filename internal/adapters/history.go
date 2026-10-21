@@ -7,8 +7,10 @@ import (
 )
 
 type HistoryPage struct {
-	Runs               []domain.Run
-	Total, Page, Pages int
+	Runs  []domain.Run `json:"runs"`
+	Total int          `json:"total"`
+	Page  int          `json:"page"`
+	Pages int          `json:"pages"`
 }
 
 func (s *Store) History(page, size int) (HistoryPage, error) {

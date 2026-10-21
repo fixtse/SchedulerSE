@@ -165,23 +165,23 @@ func TestAgentSettingsTokenLifecycleAndCSRF(t *testing.T) {
 	}
 }
 
-func TestAgentSkillDownloadRequiresAuthentication(t *testing.T) {
+func TestAgentDeliveryDownloadRequiresAuthentication(t *testing.T) {
 	f := fixture(t)
-	code, _ := f.get(t, "/settings/agent/skill.zip")
+	code, _ := f.get(t, "/settings/agent/delivery.zip")
 	if code != 303 {
-		t.Fatal("browser skill download did not require sign-in", code)
+		t.Fatal("browser delivery kit download did not require sign-in", code)
 	}
-	if res := agentRequest(f, "GET", "/api/agent/v1/skill.zip", "", ""); res.Code != 401 {
-		t.Fatal("API skill download did not require token", res.Code)
+	if res := agentRequest(f, "GET", "/api/agent/v1/delivery.zip", "", ""); res.Code != 401 {
+		t.Fatal("API delivery kit download did not require token", res.Code)
 	}
 	if err := f.store.SetAgentToken(digest("download-token")); err != nil {
 		t.Fatal(err)
 	}
-	res := agentRequest(f, "GET", "/api/agent/v1/skill.zip", "download-token", "")
+	res := agentRequest(f, "GET", "/api/agent/v1/delivery.zip", "download-token", "")
 	if res.Code != 200 || res.Header().Get("Content-Type") != "application/zip" || !strings.HasPrefix(res.Body.String(), "PK") {
-		t.Fatal("authenticated skill download failed", res.Code)
+		t.Fatal("authenticated delivery kit download failed", res.Code)
 	}
-	if !strings.Contains(res.Header().Get("Content-Disposition"), "schedulerse-agent.zip") {
+	if !strings.Contains(res.Header().Get("Content-Disposition"), "schedulerse-delivery.zip") {
 		t.Fatal("missing download filename")
 	}
 }
@@ -282,7 +282,7 @@ func TestAgentTokenCanConfigureDeliveryWithoutBrowserSession(t *testing.T) {
 	}
 }
 
-func TestSkillDownloadCapturesBrowserOrigin(t *testing.T) {
+func TestDeliveryDownloadCapturesBrowserOrigin(t *testing.T) {
 	f := fixture(t)
 	if err := f.store.SetAgentToken(digest("origin-api-token")); err != nil {
 		t.Fatal(err)
@@ -300,7 +300,7 @@ func TestSkillDownloadCapturesBrowserOrigin(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f.app.Config.CookieSecure = tc.secure
-			req := httptest.NewRequest("GET", "/api/agent/v1/skill.zip?origin="+url.QueryEscape(tc.origin), nil)
+			req := httptest.NewRequest("GET", "/api/agent/v1/delivery.zip?origin="+url.QueryEscape(tc.origin), nil)
 			req.Host = tc.host
 			req.Header.Set("Authorization", "Bearer origin-api-token")
 			req.Header.Set("Referer", tc.referer)
@@ -308,7 +308,7 @@ func TestSkillDownloadCapturesBrowserOrigin(t *testing.T) {
 			res := httptest.NewRecorder()
 			f.app.ServeHTTP(res, req)
 			if res.Code != 200 {
-				t.Fatal("skill download failed", res.Code, res.Body.String())
+				t.Fatal("delivery kit download failed", res.Code, res.Body.String())
 			}
 			archive, err := zip.NewReader(bytes.NewReader(res.Body.Bytes()), int64(res.Body.Len()))
 			if err != nil {
@@ -316,7 +316,7 @@ func TestSkillDownloadCapturesBrowserOrigin(t *testing.T) {
 			}
 			found := false
 			for _, file := range archive.File {
-				if file.Name == "schedulerse-agent/connection.json" {
+				if file.Name == "schedulerse-delivery/connection.json" {
 					reader, err := file.Open()
 					if err != nil {
 						t.Fatal(err)
@@ -337,7 +337,7 @@ func TestSkillDownloadCapturesBrowserOrigin(t *testing.T) {
 	}
 	f.app.Config.CookieSecure = false
 	for _, origin := range []string{"https://attacker.example", "http://example.com/path", "http://user@example.com", "http://example.com?token=secret", "ftp://example.com", "http://example.com#fragment"} {
-		res := agentRequest(f, "GET", "/api/agent/v1/skill.zip?origin="+url.QueryEscape(origin), "origin-api-token", "")
+		res := agentRequest(f, "GET", "/api/agent/v1/delivery.zip?origin="+url.QueryEscape(origin), "origin-api-token", "")
 		if res.Code != 400 {
 			t.Fatalf("accepted invalid download origin %q: %d", origin, res.Code)
 		}
@@ -369,7 +369,7 @@ func TestAgentSetupGuideIsReadableInSettings(t *testing.T) {
 	if response.StatusCode != 200 || !strings.HasPrefix(response.Header.Get("Content-Type"), "text/html") || response.Header.Get("Content-Disposition") != "" {
 		t.Fatal("guide was not displayed as an app page", response.StatusCode, response.Header)
 	}
-	if !strings.Contains(string(body), "Connect in three steps") || !strings.Contains(string(body), "guide.md") || !strings.Contains(string(body), "conversation_id") || !strings.Contains(string(body), `href="/settings/agent/skill.zip"`) {
+	if !strings.Contains(string(body), "Set up your agent") || !strings.Contains(string(body), "guide.md") || !strings.Contains(string(body), "conversation_id") || !strings.Contains(string(body), `href="/settings/agent/delivery.zip"`) {
 		t.Fatal("guide omitted setup instructions, download or API reference")
 	}
 	if response.Header.Get("Cache-Control") != "no-store" {

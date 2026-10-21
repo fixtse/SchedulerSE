@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata"
@@ -27,21 +26,8 @@ func env(key, fallback string) string {
 	return fallback
 }
 func LoadConfig() (Config, error) {
-	c := Config{DataDir: env("DATA_DIR", "./data"), Address: env("LISTEN_ADDR", ":"+env("HEALTH_PORT", "8789")), Timezone: env("TZ", "Europe/Madrid"), TelegramToken: os.Getenv("TELEGRAM_BOT_TOKEN"), TelegramChat: os.Getenv("TELEGRAM_CHAT_ID"), TelegramURL: env("TELEGRAM_API_URL", "https://api.telegram.org")}
-	secure := env("COOKIE_SECURE", "false")
-	if secure != "true" && secure != "false" {
-		return c, errors.New("COOKIE_SECURE must be true or false")
-	}
-	c.CookieSecure = secure == "true"
-	n, err := strconv.Atoi(env("REQUEST_TIMEOUT_MS", "120000"))
-	if err != nil || n < 100 || n > 600000 {
-		return c, errors.New("invalid REQUEST_TIMEOUT_MS")
-	}
-	c.Timeout = time.Duration(n) * time.Millisecond
-	if _, err = time.LoadLocation(c.Timezone); err != nil {
-		return c, errors.New("invalid TZ")
-	}
-	if err = ValidateEndpoint(c.TelegramURL); err != nil {
+	c := Config{DataDir: env("DATA_DIR", "./data"), Address: env("LISTEN_ADDR", ":"+env("HEALTH_PORT", "8789")), Timezone: "Europe/Madrid", Timeout: 120 * time.Second, TelegramToken: os.Getenv("TELEGRAM_BOT_TOKEN"), TelegramChat: os.Getenv("TELEGRAM_CHAT_ID"), TelegramURL: env("TELEGRAM_API_URL", "https://api.telegram.org")}
+	if err := ValidateEndpoint(c.TelegramURL); err != nil {
 		return c, err
 	}
 	return c, nil
@@ -114,6 +100,25 @@ func ValidateJob(j domain.Job, tz string) error {
 	}
 	if strings.TrimSpace(j.Name) == "" || len(j.Name) > 100 || strings.ContainsAny(j.Name, "\r\n") {
 		return errors.New("name must be 1–100 characters on one line")
+	}
+	if j.Kind != "" && j.Kind != "http" && j.Kind != "bash" {
+		return errors.New("invalid task type")
+	}
+	if j.Kind == "bash" {
+		if j.Policy != "generic" {
+			return errors.New("create a new task to run a script")
+		}
+		if strings.TrimSpace(j.Script) == "" || len(j.Script) > 65536 || strings.ContainsRune(j.Script, 0) {
+			return errors.New("script must contain 1–65536 bytes without NUL characters")
+		}
+		if j.RetryCount != 0 || j.RetryUncertain || j.FallbackURL != "" {
+			return errors.New("script tasks do not support HTTP retries or fallback")
+		}
+		if j.Cron != "" {
+			_, err := ParseSchedule(j.Cron, tz)
+			return err
+		}
+		return nil
 	}
 	if err := ValidateEndpoint(j.URL); err != nil {
 		return err
