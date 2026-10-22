@@ -572,8 +572,8 @@
                         <pre aria-hidden="true"></pre><textarea aria-label="Bash script" wrap="off" autocapitalize="off"
                             autocomplete="off" name="script" rows="10" maxlength="65536"
                             spellcheck="false">{{.Job.Script}}</textarea>
-                    </div><button type="button" class="run-button" data-bash-example hidden>Fill example</button>
-                    <small>Runs in an isolated, temporary workspace with no network, saved credentials, or persistent files.
+                    </div><button type="button" class="run-button" data-bash-example hidden>Fill curl example</button>
+                    <small>Runs in an isolated, temporary workspace with network access. Saved credentials and persistent files stay private.
                         Exit 0 means success; output is discarded. Bash must be enabled by the administrator.</small></label>
                 <details class="advanced-options bash-tools" data-task-kind="bash" {{if ne .Job.Kind "bash"
                     }}hidden{{end}}>
@@ -610,7 +610,7 @@
                         </dd>
                     </dl>
                     <p class="muted">Use <code>/tmp</code> for temporary work (16 MiB maximum). Files are discarded after each run.
-                        Network tools are installed but network access is disabled.</p>
+                        Network tools use the same network as the service, with DNS and HTTPS support.</p>
                 </details>
                 <div class="stack" data-task-kind="http" {{if eq .Job.Kind "bash" }}hidden{{end}}><label>Endpoint
                         URL<input name="url" type="url" value="{{.Job.URL}}"

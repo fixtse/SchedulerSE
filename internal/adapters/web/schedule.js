@@ -55,9 +55,11 @@ function initializePage(root = document) {
           '#!/usr/bin/env bash',
           'set -euo pipefail',
           '',
-          '# Temporary files are removed after each isolated run.',
-          "printf '%s\\n' '{\"message\":\"Hello from SchedulerSE\"}' > /tmp/message.json",
-          "jq -e '.message | length > 0' /tmp/message.json > /dev/null",
+          '# Replace this URL and JSON body with your endpoint and payload.',
+          "curl --fail-with-body --silent --show-error --max-time 30 \\",
+          "  --request POST 'https://example.com/api/tasks' \\",
+          "  --header 'Content-Type: application/json' \\",
+          `  --data '{"message":"Hello from SchedulerSE"}'`,
           ''
         ].join('\n');
         input.dispatchEvent(new Event('input', { bubbles: true }));

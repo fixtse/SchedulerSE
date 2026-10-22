@@ -86,58 +86,44 @@ Telegram notification preference. A failed fallback is recorded as a failure.
 
 ### Bash scripts
 
-Bash is **disabled by default**, including existing saved scripts. HTTP automations
-and reminders continue to work. Use HTTP POST tasks when your work needs a network
-request.
+Bash lets you run a series of commands as an automation. It is **disabled by default**
+because commands can do powerful things, and a mistaken script can use too many
+resources or interrupt the service. You do not need Bash for reminders or HTTP POST
+tasks.
 
-Administrators may set `ENABLE_BASH=true` to enable isolated scripts, then separately
-set `ENABLE_AGENT_BASH=true` to allow agents to create or run them. Both flags are
-strict booleans and require a restart. In Compose, edit the explicit values under
-`environment`; an `.env` value does not override those entries.
+First, check whether your server is ready:
 
-Enabling Bash requires Linux, `bubblewrap`, `prlimit`, working unprivileged user/PID/
-network namespaces, and cgroup v2 limits of at most 512 MiB memory, 128 PIDs, and one
-CPU core. These tools are included in the image. The service checks the resource
-limits and runs a sandbox probe at startup; unsupported isolation fails closed.
-Standard Docker security policies may block nested namespaces. Keep Bash disabled
-on those hosts; do not add privileged mode, host mounts, the Docker socket, or broad
-capabilities to bypass the check. Native services need equivalent external cgroup
-limits, for example systemd `MemoryMax=512M`, `MemorySwapMax=0`, `TasksMax=128`, and `CPUQuota=100%`.
-
-Scripts run with `bash -e -o pipefail` in fresh namespaces with an empty environment
-apart from `PATH` and `HOME`. They have no network access, scheduler data, home
-directory, credentials, or persistent output. System commands and libraries are
-mounted read-only. `/tmp` is private and limited to 16 MiB; every file is discarded
-when the run ends. Existing scripts that use `/data`, inherited environment values,
-or network commands must be rewritten; there is no unsafe compatibility fallback.
-
-```bash
-printf '%s\n' '{"message":"Hello from SchedulerSE"}' > /tmp/message.json
-jq -e '.message | length > 0' /tmp/message.json > /dev/null
+```sh
+sh scripts/check-bash.sh
 ```
 
-Each run has its own PID namespace with Bubblewrap retained as its PID 1 supervisor.
-Completion or timeout destroys its descendants,
-including detached processes. Process limits cap address space at 256 MiB, CPU time
-at 30 seconds per process, file size at 16 MiB, open files at 128, and processes at
-64 per sandbox user namespace. The execution timeout is also enforced, initially
-120 seconds and at most 600 seconds. Output is discarded; exit zero records success,
-a nonzero exit records `SCRIPT_FAILED`, and timeout records `SCRIPT_ABORTED`.
-HTTP retries and fallback are disabled for scripts.
+The checker shows **PASS** or **FAIL** and suggests what to install or configure.
+It checks a temporary container without changing your running service.
 
-The scheduler admits at most four simultaneous executions. When capacity is full,
-manual requests are rejected and scheduled occurrences are skipped rather than
-queued or replayed. Compose also limits the
-whole service to 512 MiB memory, one CPU, 128 PIDs and rotating logs. Scripts share
-this aggregate budget with the scheduler, so resource abuse can still interrupt
-service availability; this is not a multi-tenant compute service. Keep enabled
-agent clients trusted and give them only the tools they need.
+To enable it, change these values under `environment` in `compose.yaml`:
 
-Storage is bounded: 1,000 automation jobs, 1,000 reminder records, 100,000 execution
-records and 100,000 pickup receipts. SQLite growth is capped at 32,768 pages
-(normally 128 MiB). Capacity exhaustion rejects new work. Records are not silently
-deleted because that would weaken idempotency; monitor capacity and archive state
-during administrator-controlled maintenance.
+```yaml
+environment:
+  DATA_DIR: /data
+  LISTEN_ADDR: ":8789"
+  ENABLE_BASH: "true"
+  ENABLE_AGENT_BASH: "false"
+```
+
+Set `ENABLE_AGENT_BASH` to `"true"` too if you want connected AI agents to create and
+run scripts. Save the file, then apply the change:
+
+```sh
+docker compose up -d
+```
+
+Choose **Bash script** when creating an automation. Scripts run in a protected,
+temporary workspace with network access, so you can use tools such as `curl` to
+call web services. Saved credentials stay private, and temporary files are removed
+after each run.
+
+Some servers cannot provide the required protection, so Bash will refuse to start
+there. See [setup details and troubleshooting](docs/bash-scripts.md) if that happens.
 
 ### Schedules and timezones
 
@@ -180,7 +166,7 @@ The built-in MCP server provides structured tools for creating, inspecting and
 cancelling reminders, configuring delivery, and creating or running HTTP POST and
 Bash automations. The REST API remains available at `/api/agent/v1`.
 The shared token manages installation-wide HTTP automations and reminder delivery.
-Bash requires separate administrator opt-in and runs only in the offline sandbox.
+Bash requires separate administrator opt-in and runs in an isolated workspace with network access.
 Give tokens only to trusted agents; HTTP automations can reach the service network.
 
 ### Connect an agent

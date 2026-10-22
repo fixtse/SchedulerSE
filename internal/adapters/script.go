@@ -6,25 +6,49 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/fixtse/SchedulerSE/internal/domain"
 )
 
-// No host root, /data, home, environment, sockets, or network are exposed.
+// Host root, /data, home, environment secrets and filesystem sockets stay hidden.
+// Scripts intentionally share the service network for HTTP and other automations.
 // Keep Bubblewrap's trusted PID 1 supervisor: --as-pid-1 would exec the
 // script as init, where an AppArmor transition or the script can clear its
 // parent-death signal. Killing the launcher must instead kill the supervisor
 // and destroy the namespace, including all setsid descendants.
 func sandboxArgs(limit string) []string {
-	args := []string{"--unshare-all", "--unshare-user", "--disable-userns", "--die-with-parent", "--new-session", "--clearenv", "--cap-drop", "ALL"}
+	args := []string{"--unshare-all", "--share-net", "--unshare-user", "--disable-userns", "--die-with-parent", "--new-session", "--clearenv", "--cap-drop", "ALL"}
 	for _, path := range []string{"/usr/bin", "/usr/lib", "/usr/lib64", "/bin", "/lib", "/lib64"} {
 		if _, err := os.Stat(path); err == nil {
 			args = append(args, "--ro-bind", path, path)
 		}
 	}
+	// Expose only resolver settings and public CA bundles, never all of /etc
+	// (which can contain application credentials and TLS private keys). Resolve
+	// source symlinks so Docker/systemd resolver files and distro CA aliases work
+	// without exposing their host directories.
+	for _, path := range scriptNetworkFiles {
+		source, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			if info, err := os.Stat(source); err == nil && info.Mode().IsRegular() {
+				args = append(args, "--ro-bind", source, path)
+			}
+		}
+	}
 	return append(args, "--proc", "/proc", "--dev", "/dev", "--size", "16777216", "--tmpfs", "/tmp", "--remount-ro", "/", "--chdir", "/tmp", "--setenv", "PATH", "/usr/bin:/bin", "--setenv", "HOME", "/tmp", "--", limit, "--as=268435456", "--cpu=30", "--fsize=16777216", "--nofile=128", "--nproc=64", "--", "/bin/bash", "--noprofile", "--norc", "-e", "-o", "pipefail")
+}
+
+var scriptNetworkFiles = []string{
+	"/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf",
+	"/etc/ssl/certs/ca-certificates.crt", // Debian, Ubuntu
+	"/etc/ssl/cert.pem",                  // Alpine, Arch, OpenSSL
+	"/etc/pki/tls/certs/ca-bundle.crt",   // Fedora, RHEL
+	"/etc/ssl/ca-bundle.pem",             // SUSE
+	"/etc/pki/tls/cacert.pem",
+	"/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
 }
 
 func scriptCommand(ctx context.Context, script string) (*exec.Cmd, error) {

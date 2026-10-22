@@ -5,7 +5,7 @@ The six findings in `security-audit-2026-10-22.md` are addressed as follows:
 - SEC-01: Bash and agent Bash have independent default-off administrator switches.
   The native shell runner has been replaced with a fail-closed bubblewrap sandbox
   exposing only read-only commands/libraries, a private `/tmp`, private processes,
-  and no network or inherited credentials. Existing saved Bash cannot bypass the
+  no inherited credentials, and explicitly enabled service network access. Existing saved Bash cannot bypass the
   execution adapter's disable switch.
 - SEC-02: Bubblewrap retains its trusted PID 1 supervisor in each PID namespace,
   so both successful exit and cancellation destroy detached descendants. No process-group-only fallback
@@ -26,11 +26,11 @@ The six findings in `security-audit-2026-10-22.md` are addressed as follows:
   accepting spoofed forwarding headers. Password hashing remains concurrency-limited.
 
 See the README for migration steps and resource ceilings. Upgrading disables all
-Bash by default and removes its previous network/environment/`/data` access even
-when enabled. No live deployment or credentials were changed.
+Bash by default and removes inherited environment secrets and `/data` access even
+when enabled. Network access is enabled for script automations. No live deployment or credentials were changed.
 
 Security regression tests cover disabled execution, REST and MCP policy, host file
-and environment isolation, network namespace separation, detached-child cleanup,
+and environment isolation, HTTP/HTTPS connectivity and resolver/certificate availability, detached-child cleanup,
 file budgets, aggregate-budget validation, admission limits and capacity release,
 storage quotas, credential-origin binding, proxy header trust, and independent login
 sources. CI requires the real Linux namespace tests to run rather than silently skip.
@@ -102,3 +102,19 @@ rebuilt with the patched builder to receive this fix.
 Verified with the actual Go 1.27.3 toolchain: govulncheck v1.9.0 reports no reachable
 vulnerabilities, and `make format-check check test compose-check` passes with
 `REQUIRE_SCRIPT_SANDBOX=true`. The `golang:1.27.3-alpine` image manifest is available.
+
+## Bash networking
+
+Bash scripts intentionally share the service's network namespace, as requested for
+network automations. Bubblewrap uses `--share-net` alongside its other isolation
+options. Resolver settings, host-name mappings, and public CA bundles are exposed
+read-only, resolving source symlinks so Docker/systemd DNS files and distro trust
+bundle aliases work. The rest of `/etc`, private keys, scheduler data and process
+environment secrets remain hidden. This change does not add network filtering;
+connections use the same network reachability as the service.
+
+Regression checks exercise an HTTP POST using name resolution and an HTTPS POST
+with certificate verification against local test servers, compare the mounted
+resolver/trust files with the service files, and retain all process cleanup,
+filesystem, credential and resource-budget tests. No external API is contacted by
+these tests.

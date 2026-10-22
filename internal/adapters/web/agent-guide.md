@@ -7,7 +7,7 @@ host, use the published service URL. HTTP is for trusted local networks; use HTT
 otherwise. Generate the token in Settings → Agent API. Keep it in a private secret
 store, never in messages, URLs, schedule context or logs. It manages agent schedules, delivery connections and HTTP POST/Bash automations.
 Bash is disabled by default and requires both ENABLE_BASH and ENABLE_AGENT_BASH.
-Enabled scripts run in an isolated offline sandbox with no scheduler state or secrets. Account/Telegram
+Enabled scripts run in an isolated sandbox with network access, without scheduler state or secrets. Account/Telegram
 settings and token management remain in the web interface.
 
 ## Connect through MCP (recommended)
@@ -286,10 +286,12 @@ For HTTP POST, use `kind: "http"`, `url`, a JSON object `body`, and optional
 are omitted from responses. HTTP tasks accept `retry_count` (0–5),
 `retry_delay_ms` (100–60000), `retry_uncertain` and `fallback_url`. Bash tasks
 require nonempty `script` (up to 64 KiB) with HTTP recovery disabled. Scripts run
-in a fresh offline sandbox with a private 16 MiB `/tmp`, no persistent files, no
+in a fresh sandbox with network access, a private 16 MiB `/tmp`, no persistent files, no
 inherited credentials, and process/resource limits. Bash creation and execution
 return 403 unless the administrator has enabled both Bash flags. Existing scripts
-that rely on `/data` or network access are incompatible. Use HTTP tasks for POSTs.
+that rely on `/data` must be updated. Scripts may use `curl` and other network
+tools; they share the service network and receive resolver settings and public
+certificate bundles for DNS and HTTPS.
 `cron` accepts five fields, or six with seconds; omit it for manual execution.
 `request_timeout_ms` accepts 100–600000, or 0 to inherit the service default.
 

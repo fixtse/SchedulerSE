@@ -58,7 +58,9 @@ func healthcheck() error {
 func main() {
 	syscall.Umask(0077)
 	if err := run(); err != nil {
-		logger{}.Event("command_failed", map[string]any{"message": "Check command, configuration and writable state directory; details withheld to protect credentials"})
+		if !errors.Is(err, errBashRequirements) {
+			logger{}.Event("command_failed", map[string]any{"message": "Check command, configuration and writable state directory; details withheld to protect credentials"})
+		}
 		os.Exit(1)
 	}
 }
@@ -66,6 +68,9 @@ func run() error {
 	command := "serve"
 	if len(os.Args) > 1 {
 		command = os.Args[1]
+	}
+	if command == "check-bash" {
+		return checkBash(os.Stdout)
 	}
 	if command == "healthcheck" {
 		return healthcheck()
@@ -79,7 +84,7 @@ func run() error {
 		return nil
 	}
 	if command != "serve" && command != "run" && command != "plan" && command != "dry-run" {
-		return errors.New("use serve, run <job>, plan, dry-run [job], healthcheck, or setup-token")
+		return errors.New("use serve, run <job>, plan, dry-run [job], healthcheck, setup-token, or check-bash")
 	}
 	c, err := adapters.LoadConfig()
 	if err != nil {

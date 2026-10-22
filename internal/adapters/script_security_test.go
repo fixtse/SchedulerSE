@@ -56,8 +56,8 @@ func TestScriptSandboxIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(data)) == host {
-		t.Fatal("host network namespace exposed")
+	if strings.TrimSpace(string(data)) != host {
+		t.Fatal("scripts did not retain service network access")
 	}
 	unchanged, _ := os.ReadFile(fixture)
 	if string(unchanged) != "synthetic secret" {
