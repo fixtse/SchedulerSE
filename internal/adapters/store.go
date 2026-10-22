@@ -24,6 +24,9 @@ func OpenStore(dir string) (*Store, error) {
 	db.SetMaxOpenConns(1)
 	s := &Store{DB: db}
 	_, err = db.Exec(`
+ PRAGMA max_page_count=32768;
+ PRAGMA journal_size_limit=4194304;
+ PRAGMA wal_autocheckpoint=256;
  CREATE TABLE IF NOT EXISTS runs(job TEXT NOT NULL,slot TEXT NOT NULL,status TEXT NOT NULL,
  notification TEXT NOT NULL DEFAULT 'none',started TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,finished TEXT,PRIMARY KEY(job,slot));
  CREATE UNIQUE INDEX IF NOT EXISTS running_job ON runs(job) WHERE status='running';
@@ -121,7 +124,7 @@ func (s *Store) Recover() error {
 	return err
 }
 func (s *Store) Begin(j domain.Job, slot string) (bool, error) {
-	result, err := s.DB.Exec(`INSERT OR IGNORE INTO runs(job,slot,status,job_name,job_revision,timeout_ms) SELECT ?,?,'running',?,?,? WHERE EXISTS(SELECT 1 FROM jobs WHERE id=? AND revision=? AND (enabled=1 OR ?))`, j.ID, slot, j.Name, j.Revision, j.TimeoutMS, j.ID, j.Revision, strings.HasPrefix(slot, "manual:"))
+	result, err := s.DB.Exec(`INSERT OR IGNORE INTO runs(job,slot,status,job_name,job_revision,timeout_ms) SELECT ?,?,'running',?,?,? WHERE EXISTS(SELECT 1 FROM jobs WHERE id=? AND revision=? AND (enabled=1 OR ?)) AND (SELECT count(*) FROM runs)<100000`, j.ID, slot, j.Name, j.Revision, j.TimeoutMS, j.ID, j.Revision, strings.HasPrefix(slot, "manual:"))
 	if err != nil {
 		return false, err
 	}
@@ -176,14 +179,41 @@ func (s *Store) Job(id string) (domain.Job, error) {
 	return scanJob(s.DB.QueryRow("SELECT "+jobColumns+" FROM jobs WHERE id=?", id))
 }
 
+var ErrCapacity = errors.New("storage quota reached; administrator maintenance required")
+
 var ErrConflict = errors.New("job changed in another session; reload before saving")
 
 func (s *Store) Save(j domain.Job, create bool) error {
-	if create {
-		_, err := s.DB.Exec(`INSERT INTO jobs(id,name,url,authorization,body,cron,enabled,policy,timezone,request_timeout_ms,retry_count,retry_delay_ms,retry_uncertain,fallback_url,fallback_authorization,kind,script) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, j.ID, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Policy, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth, j.Kind, j.Script)
+	tx, err := s.DB.Begin()
+	if err != nil {
 		return err
 	}
-	result, err := s.DB.Exec(`UPDATE jobs SET name=?,url=?,authorization=?,body=?,cron=?,enabled=?,timezone=?,request_timeout_ms=?,retry_count=?,retry_delay_ms=?,retry_uncertain=?,fallback_url=?,fallback_authorization=?,kind=?,script=?,revision=revision+1 WHERE id=? AND revision=? AND policy=?`, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth, j.Kind, j.Script, j.ID, j.Revision, j.Policy)
+	defer tx.Rollback()
+	if create {
+		result, err := tx.Exec(`INSERT INTO jobs(id,name,url,authorization,body,cron,enabled,policy,timezone,request_timeout_ms,retry_count,retry_delay_ms,retry_uncertain,fallback_url,fallback_authorization,kind,script) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM jobs)<1000`, j.ID, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Policy, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth, j.Kind, j.Script)
+		if err != nil {
+			return err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return ErrCapacity
+		}
+		return tx.Commit()
+	}
+	previous, err := scanJob(tx.QueryRow("SELECT "+jobColumns+" FROM jobs WHERE id=?", j.ID))
+	if err != nil {
+		return err
+	}
+	if err = ValidateCredentialDestination(previous.URL, j.URL, previous.Authorization, j.Authorization); err != nil {
+		return err
+	}
+	if err = ValidateCredentialDestination(previous.FallbackURL, j.FallbackURL, previous.FallbackAuth, j.FallbackAuth); err != nil {
+		return err
+	}
+	result, err := tx.Exec(`UPDATE jobs SET name=?,url=?,authorization=?,body=?,cron=?,enabled=?,timezone=?,request_timeout_ms=?,retry_count=?,retry_delay_ms=?,retry_uncertain=?,fallback_url=?,fallback_authorization=?,kind=?,script=?,revision=revision+1 WHERE id=? AND revision=? AND policy=?`, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth, j.Kind, j.Script, j.ID, j.Revision, j.Policy)
 	if err != nil {
 		return err
 	}
@@ -194,7 +224,7 @@ func (s *Store) Save(j domain.Job, create bool) error {
 	if n != 1 {
 		return ErrConflict
 	}
-	return nil
+	return tx.Commit()
 }
 func (s *Store) Recent() ([]domain.Run, error) {
 	page, err := s.History(1, 30)

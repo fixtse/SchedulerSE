@@ -8,6 +8,13 @@ services:
     stop_grace_period: 20s
     user: "1000:1000"
     read_only: true
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    ulimits:
+      core: 0
+      nofile: 1024
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     env_file:
@@ -16,12 +23,19 @@ services:
     environment:
       DATA_DIR: /data
       LISTEN_ADDR: ":8789"
+      ENABLE_BASH: "false"
+      ENABLE_AGENT_BASH: "false"
     ports:
       - "127.0.0.1:8789:8789"
     volumes:
       - state:/data
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=16m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "/app/schedulerse", "healthcheck"]
       interval: 60s

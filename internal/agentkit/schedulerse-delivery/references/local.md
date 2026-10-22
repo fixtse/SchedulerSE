@@ -106,3 +106,13 @@ items without one remain pending and should be cancelled/recreated with the inte
 routing label. Changing from webhook to polling affects pending occurrences only. An in-flight
 webhook may still complete. Revoking the API token stops pickup; existing pending
 schedules are retained. Cancellation does not undo an occurrence already picked up.
+
+## Plaintext private-network connections
+
+HTTPS is required for non-loopback SchedulerSE addresses by default. If an
+administrator explicitly authorizes plaintext on a trusted Docker/private network,
+add `--allow-insecure-network` to `init-local`. This opt-in is stored in the private
+bridge configuration and checked on every request. Existing configurations using
+remote HTTP must switch to HTTPS or explicitly set `allow_insecure_network` to
+`true` after reviewing their network exposure. Loopback HTTP remains supported.
+The shared API token must never cross an untrusted network without TLS.

@@ -75,6 +75,7 @@ func TestAgentAutomationCreationAndExecution(t *testing.T) {
 
 func TestAgentBashAutomationValidation(t *testing.T) {
 	f := fixture(t)
+	f.app.Config.EnableBash, f.app.Config.EnableAgentBash = true, true
 	if err := f.store.SetAgentToken(digest("agent-secret")); err != nil {
 		t.Fatal(err)
 	}

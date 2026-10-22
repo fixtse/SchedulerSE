@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/fixtse/SchedulerSE/internal/domain"
 	"github.com/robfig/cron/v3"
+	"net"
 	"net/url"
 	"os"
 	"regexp"
@@ -16,6 +17,8 @@ import (
 type Config struct {
 	DataDir, Address, Timezone, TelegramToken, TelegramChat, TelegramURL string
 	CookieSecure                                                         bool
+	TrustedProxies                                                       []*net.IPNet
+	EnableBash, EnableAgentBash                                          bool
 	Timeout                                                              time.Duration
 }
 
@@ -27,6 +30,33 @@ func env(key, fallback string) string {
 }
 func LoadConfig() (Config, error) {
 	c := Config{DataDir: env("DATA_DIR", "./data"), Address: env("LISTEN_ADDR", ":"+env("HEALTH_PORT", "8789")), Timezone: "Europe/Madrid", Timeout: 120 * time.Second, TelegramToken: os.Getenv("TELEGRAM_BOT_TOKEN"), TelegramChat: os.Getenv("TELEGRAM_CHAT_ID"), TelegramURL: env("TELEGRAM_API_URL", "https://api.telegram.org")}
+	for key, dest := range map[string]*bool{"ENABLE_BASH": &c.EnableBash, "ENABLE_AGENT_BASH": &c.EnableAgentBash} {
+		value := env(key, "false")
+		if value != "true" && value != "false" {
+			return c, errors.New(key + " must be true or false")
+		}
+		*dest = value == "true"
+	}
+	if raw := os.Getenv("TRUSTED_PROXY_CIDRS"); raw != "" {
+		for _, entry := range strings.Split(raw, ",") {
+			_, network, err := net.ParseCIDR(strings.TrimSpace(entry))
+			if err != nil {
+				return c, errors.New("invalid TRUSTED_PROXY_CIDRS")
+			}
+			c.TrustedProxies = append(c.TrustedProxies, network)
+		}
+	}
+	if c.EnableAgentBash && !c.EnableBash {
+		return c, errors.New("ENABLE_AGENT_BASH requires ENABLE_BASH")
+	}
+	if c.EnableBash {
+		if err := CheckScriptResourceBudget(); err != nil {
+			return c, err
+		}
+		if err := CheckScriptSandbox(); err != nil {
+			return c, err
+		}
+	}
 	if err := ValidateEndpoint(c.TelegramURL); err != nil {
 		return c, err
 	}
@@ -164,6 +194,20 @@ func ValidateRunnable(j domain.Job, telegram domain.TelegramSettings) error {
 		if !telegram.Enabled || telegram.Token == "" || telegram.Chat == "" {
 			return errors.New("configure and enable Telegram in settings before running this saved task")
 		}
+	}
+	return nil
+}
+
+// Secrets are bound to an origin, including scheme and port. An origin change
+// must clear or replace the old credential, never silently forward it.
+func ValidateCredentialDestination(oldURL, newURL, oldAuth, newAuth string) error {
+	if oldAuth == "" || newAuth != oldAuth {
+		return nil
+	}
+	old, e1 := url.Parse(oldURL)
+	next, e2 := url.Parse(newURL)
+	if e1 != nil || e2 != nil || !strings.EqualFold(old.Scheme, next.Scheme) || !strings.EqualFold(old.Host, next.Host) {
+		return errors.New("destination origin changed: clear or replace its authorization header")
 	}
 	return nil
 }

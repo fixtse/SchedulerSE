@@ -10,6 +10,7 @@ import (
 )
 
 func TestScriptExecution(t *testing.T) {
+	requireSandbox(t)
 	for _, tc := range []struct{ name, script, code string }{
 		{"success", "printf done", ""},
 		{"exit", "exit 7", "SCRIPT_FAILED"},
@@ -19,7 +20,7 @@ func TestScriptExecution(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			started := time.Now()
-			_, err := (&HTTP{}).Post(context.Background(), domain.Job{Kind: "bash", Script: tc.script, TimeoutMS: 100})
+			_, err := (&HTTP{EnableBash: true}).Post(context.Background(), domain.Job{Kind: "bash", Script: tc.script, TimeoutMS: 100})
 			if tc.code == "" {
 				if err != nil {
 					t.Fatal(err)

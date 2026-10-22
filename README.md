@@ -14,7 +14,7 @@ web interface, with execution history and detailed Telegram alerts.
 ## Features
 
 - **HTTP POST automations** — send JSON payloads with optional authorization, task-specific timeouts, retries and a fallback endpoint.
-- **Bash script tasks** — paste a script into the editor and run it on demand or on a schedule. Bash is included in the container.
+- **Bash script tasks** — paste a script into the editor and run it on demand or on a schedule. Bash is included in the container and disabled by default.
 - **Flexible scheduling** — minute intervals, hourly, daily, weekly, monthly and advanced cron schedules, with a timezone for each task.
 - **Manual execution** — start saved tasks with **Run now**, with protection against duplicate submissions and overlapping runs.
 - **Telegram alerts** — choose success, failure and fallback notifications.
@@ -63,7 +63,9 @@ running, then check **Recent activity** for the result.
 
 Enter an endpoint URL, a JSON object and an optional authorization header. Use the
 complete header value, such as `Bearer …`. JSON values retain their original types.
-Leave a saved authorization field blank to keep its current value.
+Leave a saved authorization field blank to keep its current value. Changing an
+endpoint origin requires clearing or replacing its saved authorization header;
+this also applies to fallback endpoints and reminder webhooks.
 
 Set an **Execution timeout** of 100–600000 milliseconds, or leave it blank to inherit
 the default in **General settings** (initially 120000). The timeout applies separately to each attempt,
@@ -84,33 +86,57 @@ Telegram notification preference. A failed fallback is recorded as a failure.
 
 ### Bash scripts
 
-Choose **Bash script** and paste your script. For example:
+Bash is **disabled by default**, including existing saved scripts. HTTP automations
+and reminders continue to work. Use HTTP POST tasks when your work needs a network
+request.
+
+Administrators may set `ENABLE_BASH=true` to enable isolated scripts, then separately
+set `ENABLE_AGENT_BASH=true` to allow agents to create or run them. Both flags are
+strict booleans and require a restart. In Compose, edit the explicit values under
+`environment`; an `.env` value does not override those entries.
+
+Enabling Bash requires Linux, `bubblewrap`, `prlimit`, working unprivileged user/PID/
+network namespaces, and cgroup v2 limits of at most 512 MiB memory, 128 PIDs, and one
+CPU core. These tools are included in the image. The service checks the resource
+limits and runs a sandbox probe at startup; unsupported isolation fails closed.
+Standard Docker security policies may block nested namespaces. Keep Bash disabled
+on those hosts; do not add privileged mode, host mounts, the Docker socket, or broad
+capabilities to bypass the check. Native services need equivalent external cgroup
+limits, for example systemd `MemoryMax=512M`, `MemorySwapMax=0`, `TasksMax=128`, and `CPUQuota=100%`.
+
+Scripts run with `bash -e -o pipefail` in fresh namespaces with an empty environment
+apart from `PATH` and `HOME`. They have no network access, scheduler data, home
+directory, credentials, or persistent output. System commands and libraries are
+mounted read-only. `/tmp` is private and limited to 16 MiB; every file is discarded
+when the run ends. Existing scripts that use `/data`, inherited environment values,
+or network commands must be rewritten; there is no unsafe compatibility fallback.
 
 ```bash
-mkdir -p /data/reports
-date -u > /data/reports/last-run.txt
+printf '%s\n' '{"message":"Hello from SchedulerSE"}' > /tmp/message.json
+jq -e '.message | length > 0' /tmp/message.json > /dev/null
 ```
 
-Scripts run with `bash -e -o pipefail` as the container's unprivileged service user.
-Each run gets a temporary working directory that is removed afterward; use `/data`
-for persistent files.
+Each run has its own PID namespace. Completion or timeout destroys its descendants,
+including detached processes. Process limits cap address space at 256 MiB, CPU time
+at 30 seconds per process, file size at 16 MiB, open files at 128, and processes at
+64 per sandbox user namespace. The execution timeout is also enforced, initially
+120 seconds and at most 600 seconds. Output is discarded; exit zero records success,
+a nonzero exit records `SCRIPT_FAILED`, and timeout records `SCRIPT_ABORTED`.
+HTTP retries and fallback are disabled for scripts.
 
-The container includes common script utilities:
+The scheduler admits at most four simultaneous executions. When capacity is full,
+manual requests are rejected and scheduled occurrences are skipped rather than
+queued or replayed. Compose also limits the
+whole service to 512 MiB memory, one CPU, 128 PIDs and rotating logs. Scripts share
+this aggregate budget with the scheduler, so resource abuse can still interrupt
+service availability; this is not a multi-tenant compute service. Keep enabled
+agent clients trusted and give them only the tools they need.
 
-- HTTP and JSON: `curl`, `wget`, `jq`.
-- Text and files: GNU coreutils, `find`, `xargs`, `grep`, `sed`, `gawk`, `diff` and `cmp`.
-- Archives: `tar`, `gzip`, `bzip2`, `xz`, `zip`, `unzip`.
-- Networking and TLS: `dig`, `nslookup`, `ip`, `ss`, `nc`, `openssl`.
-- Automation: `git`, `ssh`, `scp`, `sftp`, `rsync`, and util-linux tools such as `flock`.
-
-Mount additional files or build a custom image for other tools and dependencies.
-Rebuild or pull an updated image and recreate the container to use newly added tools.
-
-Exit zero records success; a nonzero exit records `SCRIPT_FAILED`. The execution
-timeout stops the script's process group. Scripts run once per occurrence, with HTTP
-retry and fallback settings disabled. Output is discarded; write any needed artifacts
-to persistent storage. Run trusted scripts, which have access to the service environment
-and its accessible files.
+Storage is bounded: 1,000 automation jobs, 1,000 reminder records, 100,000 execution
+records and 100,000 pickup receipts. SQLite growth is capped at 32,768 pages
+(normally 128 MiB). Capacity exhaustion rejects new work. Records are not silently
+deleted because that would weaken idempotency; monitor capacity and archive state
+during administrator-controlled maintenance.
 
 ### Schedules and timezones
 
@@ -152,7 +178,9 @@ Use the **Agent schedules** tab for timers, reminders and recurring agent tasks.
 The built-in MCP server provides structured tools for creating, inspecting and
 cancelling reminders, configuring delivery, and creating or running HTTP POST and
 Bash automations. The REST API remains available at `/api/agent/v1`.
-The shared token grants script execution as the service user; give it to trusted agents.
+The shared token manages installation-wide HTTP automations and reminder delivery.
+Bash requires separate administrator opt-in and runs only in the offline sandbox.
+Give tokens only to trusted agents; HTTP automations can reach the service network.
 
 ### Connect an agent
 
@@ -249,3 +277,13 @@ docker compose logs --tail 50 schedulerse
 ## License
 
 [MIT](LICENSE)
+
+### Authentication behind a reverse proxy
+
+Login/reset verification is limited per client address rather than globally.
+Forwarded headers are ignored unless the peer is in `TRUSTED_PROXY_CIDRS`, a
+comma-separated list of explicit proxy network CIDRs. Configure only the actual
+proxy addresses, ensure the proxy sanitizes forwarded headers, and block direct
+access to the backend. The server walks `X-Forwarded-For` from right to left until
+it reaches an untrusted hop. Leave this setting empty for direct connections.
+Enable secure cookies in General settings when serving through HTTPS.

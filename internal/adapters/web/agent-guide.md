@@ -6,7 +6,8 @@ the default Compose service is reachable as `http://schedulerse:8789`. From the
 host, use the published service URL. HTTP is for trusted local networks; use HTTPS
 otherwise. Generate the token in Settings → Agent API. Keep it in a private secret
 store, never in messages, URLs, schedule context or logs. It manages agent schedules, delivery connections and HTTP POST/Bash automations.
-Treat this token as script execution access as the service user. Account/Telegram
+Bash is disabled by default and requires both ENABLE_BASH and ENABLE_AGENT_BASH.
+Enabled scripts run in an isolated offline sandbox with no scheduler state or secrets. Account/Telegram
 settings and token management remain in the web interface.
 
 ## Connect through MCP (recommended)
@@ -264,6 +265,7 @@ restart become `interrupted`; inspect the receiver before scheduling again.
 Pending overdue tasks are delivered when service resumes. Missed recurrence slots
 are skipped after a successful callback. Delivery is sequential, approximately
 one task per second plus callback latency, so this is not a precise alarm service.
+Changing a webhook origin requires clearing or replacing its saved authorization header.
 Removing the webhook pauses pending deliveries; updating it routes future deliveries
 to the new receiver. Revoking the API token blocks API access but does not cancel
 existing schedules. Use the Agent schedules tab to inspect or cancel them.
@@ -276,7 +278,7 @@ POST `/automations` creates a task (201; duplicate ID returns 409). Use a stable
 and inspect it before retrying an uncertain creation. New tasks default to disabled.
 
 ```json
-{"id":"daily-report","name":"Daily report","kind":"bash","script":"date -u > /data/last-report.txt","cron":"0 9 * * *","timezone":"Europe/Madrid","enabled":true,"request_timeout_ms":30000}
+{"id":"daily-report","name":"Daily report","kind":"bash","script":"date -u > /tmp/last-report.txt","cron":"0 9 * * *","timezone":"Europe/Madrid","enabled":true,"request_timeout_ms":30000}
 ```
 
 For HTTP POST, use `kind: "http"`, `url`, a JSON object `body`, and optional
@@ -284,7 +286,10 @@ For HTTP POST, use `kind: "http"`, `url`, a JSON object `body`, and optional
 are omitted from responses. HTTP tasks accept `retry_count` (0–5),
 `retry_delay_ms` (100–60000), `retry_uncertain` and `fallback_url`. Bash tasks
 require nonempty `script` (up to 64 KiB) with HTTP recovery disabled. Scripts run
-inside the service container with its environment and filesystem permissions.
+in a fresh offline sandbox with a private 16 MiB `/tmp`, no persistent files, no
+inherited credentials, and process/resource limits. Bash creation and execution
+return 403 unless the administrator has enabled both Bash flags. Existing scripts
+that rely on `/data` or network access are incompatible. Use HTTP tasks for POSTs.
 `cron` accepts five fields, or six with seconds; omit it for manual execution.
 `request_timeout_ms` accepts 100–600000, or 0 to inherit the service default.
 

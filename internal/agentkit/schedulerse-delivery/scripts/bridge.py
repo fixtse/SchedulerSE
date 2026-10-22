@@ -3,6 +3,7 @@
 import argparse
 import contextlib
 import hashlib
+import ipaddress
 import getpass
 import json
 import os
@@ -87,16 +88,22 @@ def validate_origin(base):
         raise ValueError("Relay URL must be an HTTPS origin without credentials")
 
 
-def validate_scheduler_origin(base):
+def validate_scheduler_origin(base, allow_insecure_network=False):
     parsed = urllib.parse.urlsplit(base)
     if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("", "/"):
         raise ValueError("Scheduler URL must be an HTTP(S) origin without credentials")
+    try:
+        local = ipaddress.ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        local = parsed.hostname == "localhost"
+    if parsed.scheme == "http" and not local and not allow_insecure_network:
+        raise ValueError("Remote scheduler URL requires HTTPS; trusted private networks require --allow-insecure-network")
 
 
 def request_json(config, method, path, payload=None):
     if config.get("transport") == "scheduler":
         base, token = config["scheduler_url"], config["api_token"]
-        validate_scheduler_origin(base)
+        validate_scheduler_origin(base, config.get("allow_insecure_network", False))
         path = "/api/agent/v1" + path
     else:
         base, token = config["relay_url"], config["poll_token"]
@@ -206,7 +213,7 @@ def dispatch(db, state, config):
         print("Agent invocation completed" if code == 0 else "Agent invocation failed; inspect private bridge logs", flush=True)
 
 
-def packaged_service_url():
+def packaged_service_url(allow_insecure_network=False):
     metadata = Path(__file__).resolve().parents[1] / "connection.json"
     if not metadata.is_file():
         raise ValueError("Download the delivery kit from your service or provide --scheduler-url")
@@ -214,7 +221,7 @@ def packaged_service_url():
     value = document.get("service_url") if isinstance(document, dict) else None
     if not isinstance(value, str):
         raise ValueError("Invalid packaged service metadata")
-    validate_scheduler_origin(value)
+    validate_scheduler_origin(value, allow_insecure_network)
     return value
 
 
@@ -223,8 +230,9 @@ def initialize(args, state):
         raise ValueError("Connection already initialized; preserve existing secrets")
     local = args.action == "init-local"
     if local:
-        scheduler_url = args.scheduler_url or packaged_service_url()
-        validate_scheduler_origin(scheduler_url)
+        insecure = getattr(args, "allow_insecure_network", False)
+        scheduler_url = args.scheduler_url or packaged_service_url(insecure)
+        validate_scheduler_origin(scheduler_url, insecure)
     else:
         validate_origin(args.relay_url)
     workdir = Path(args.workdir).expanduser().resolve()
@@ -241,7 +249,7 @@ def initialize(args, state):
         if not token or any(c.isspace() for c in token):
             raise ValueError("A valid API token is required")
         config.update(transport="scheduler", scheduler_url=scheduler_url.rstrip("/"),
-                      api_token=token, consumer_id=secrets.token_urlsafe(32))
+                      api_token=token, consumer_id=secrets.token_urlsafe(32), allow_insecure_network=insecure)
     else:
         config.update(transport="cloudflare", relay_url=args.relay_url.rstrip("/"), poll_token=secrets.token_urlsafe(32))
     if args.command_json:
@@ -282,6 +290,7 @@ def main():
     init = subs.add_parser("init", help="Generate private relay connection files")
     init.add_argument("--relay-url", required=True)
     local = subs.add_parser("init-local", help="Connect directly to SchedulerSE; no webhook server or relay")
+    local.add_argument("--allow-insecure-network", action="store_true", help="Permit plaintext tokens on an explicitly trusted private network")
     local.add_argument("--scheduler-url", help="Override the service address bundled in the delivery kit")
     local.add_argument("--token-file", help="Private API token file; otherwise prompt without echo")
     for setup in (init, local):

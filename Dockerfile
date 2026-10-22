@@ -14,7 +14,7 @@ COPY internal ./internal
 RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/schedulerse ./cmd/schedulerse
 
 FROM build AS test
-RUN go test -race -timeout 60s ./...
+RUN go test -race -timeout 180s ./...
 
 FROM alpine:3.24 AS runtime
 LABEL org.opencontainers.image.licenses="MIT"
@@ -22,7 +22,7 @@ LABEL org.opencontainers.image.source="https://github.com/fixtse/SchedulerSE"
 LABEL org.opencontainers.image.description="SchedulerSE: lightweight scheduling with authenticated job management"
 # Common tools for user-authored Bash automations (no compiler toolchain).
 RUN apk add --no-cache \
-        ca-certificates bash coreutils findutils grep sed gawk diffutils \
+        ca-certificates bubblewrap bash coreutils findutils grep sed gawk diffutils \
         curl wget jq openssl \
         tar gzip bzip2 xz zip unzip \
         bind-tools iproute2 netcat-openbsd \

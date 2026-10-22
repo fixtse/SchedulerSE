@@ -228,6 +228,7 @@ func TestMCPAutomationsExecuteAndReportHistory(t *testing.T) {
 	if result = callMCP(t, f, "run_automation", run); !result.IsError {
 		t.Fatal("execution replayed")
 	}
+	f.app.Config.EnableBash, f.app.Config.EnableAgentBash = true, true
 	if result = callMCP(t, f, "create_automation", map[string]any{"id": "mcp-script", "name": "MCP Bash", "kind": "bash", "script": "true"}); result.IsError {
 		t.Fatal(result.Content)
 	}

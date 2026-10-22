@@ -86,7 +86,7 @@ class BridgeTests(unittest.TestCase):
                 bridge.validate_origin(bad)
 
     def test_local_pickup_retries_lost_response_before_executing(self):
-        self.config.update(transport="scheduler", scheduler_url="http://schedulerse:8789",
+        self.config.update(transport="scheduler", scheduler_url="http://schedulerse:8789", allow_insecure_network=True,
                            api_token="private-api", consumer_id="stable-random-consumer-identity-123")
         self.event["task"]["run_at_unix"] = 1792566000
         def uncertain(config, method, path, payload=None):
@@ -123,10 +123,21 @@ class BridgeTests(unittest.TestCase):
             invoke.assert_not_called()
 
     def test_local_origin_accepts_docker_service_dns(self):
-        bridge.validate_scheduler_origin("http://schedulerse:8789")
+        with self.assertRaises(ValueError):
+            bridge.validate_scheduler_origin("http://schedulerse:8789")
+        bridge.validate_scheduler_origin("http://schedulerse:8789", True)
+        for local in ("http://localhost:8789", "http://127.0.0.1:8789", "http://[::1]:8789"):
+            bridge.validate_scheduler_origin(local)
         for invalid in ("http://secret@schedulerse:8789", "http://schedulerse:8789/?token=secret"):
             with self.assertRaises(ValueError):
                 bridge.validate_scheduler_origin(invalid)
+
+    def test_remote_plaintext_is_rejected_before_token_is_sent(self):
+        config = {"transport": "scheduler", "scheduler_url": "http://remote.example:8789", "api_token": "private"}
+        with patch.object(bridge.urllib.request, "build_opener") as opener:
+            with self.assertRaises(ValueError):
+                bridge.request_json(config, "GET", "/inbox")
+            opener.assert_not_called()
 
     def test_local_setup_uses_packaged_address_and_configures_polling(self):
         token_file = self.state / "api-token"
@@ -151,7 +162,7 @@ class BridgeTests(unittest.TestCase):
     def test_failed_connection_setup_does_not_save_half_initialized_config(self):
         token_file = self.state / "api-token"
         token_file.write_text("private-setup-token")
-        args = SimpleNamespace(action="init-local", scheduler_url="http://schedulerse:8789",
+        args = SimpleNamespace(action="init-local", scheduler_url="http://schedulerse:8789", allow_insecure_network=True,
             token_file=str(token_file), workdir=str(self.state), conversation_id="expected-thread",
             codex_session=None, command_json=None)
         with patch.object(bridge, "request_json", side_effect=OSError("unreachable")):
@@ -166,7 +177,9 @@ class BridgeTests(unittest.TestCase):
         metadata = kit / "connection.json"
         metadata.write_text(json.dumps({"service_url": "http://192.0.2.10:8789"}))
         with patch.object(bridge, "__file__", str(scripts / "bridge.py")):
-            self.assertEqual(bridge.packaged_service_url(), "http://192.0.2.10:8789")
+            with self.assertRaises(ValueError):
+                bridge.packaged_service_url()
+            self.assertEqual(bridge.packaged_service_url(True), "http://192.0.2.10:8789")
             metadata.write_text(json.dumps({"service_url": "https://user:secret@example.com"}))
             with self.assertRaises(ValueError):
                 bridge.packaged_service_url()

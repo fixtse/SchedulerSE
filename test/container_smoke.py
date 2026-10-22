@@ -21,6 +21,7 @@ def wait_healthy():
 try:
     docker("run", "-d", "--name", name, "--network", "none", "--read-only",
            "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+           "--memory", "512m", "--memory-swap", "512m", "--cpus", "1", "--pids-limit", "128",
            "--volume", name + "-state:/data",
            "--tmpfs", "/tmp:rw,nosuid,nodev,size=16m",
            "-e", "TELEGRAM_API_URL=http://127.0.0.1:1/mock", image)

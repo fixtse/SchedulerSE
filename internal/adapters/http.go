@@ -17,12 +17,13 @@ type HTTP struct {
 	Client                   *http.Client
 	Token, Chat, TelegramURL string
 	RequestTimeout           time.Duration
+	EnableBash               bool
 }
 
 func NewHTTP(c Config) *HTTP {
 	// No pooled connections or HTTP/2 stream replays for side-effecting requests.
 	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: (&net.Dialer{Timeout: 10 * time.Second}).DialContext, TLSHandshakeTimeout: 10 * time.Second, DisableKeepAlives: true, TLSNextProto: map[string]func(string, *tls.Conn) http.RoundTripper{}}
-	return &HTTP{Client: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, Token: c.TelegramToken, Chat: c.TelegramChat, TelegramURL: c.TelegramURL, RequestTimeout: c.Timeout}
+	return &HTTP{Client: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, Token: c.TelegramToken, Chat: c.TelegramChat, TelegramURL: c.TelegramURL, RequestTimeout: c.Timeout, EnableBash: c.EnableBash}
 }
 func (h *HTTP) post(ctx context.Context, endpoint, auth string, body []byte) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
@@ -64,6 +65,9 @@ func (h *HTTP) post(ctx context.Context, endpoint, auth string, body []byte) ([]
 }
 func (h *HTTP) Post(ctx context.Context, j domain.Job) (domain.Response, error) {
 	if j.Kind == "bash" {
+		if !h.EnableBash {
+			return domain.Response{}, &domain.Failure{Code: "SCRIPT_DISABLED"}
+		}
 		return runScript(ctx, j)
 	}
 	timeout := h.RequestTimeout

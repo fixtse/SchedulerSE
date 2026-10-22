@@ -283,7 +283,8 @@
                             <form hx-boost="false" method="post" action="/settings/agent/token"><input type="hidden"
                                     name="csrf" value="{{.CSRF}}"><input type="hidden" name="action"
                                     value="generate"><button class="primary">Generate API token →</button></form>{{end}}
-                            <small>Tokens grant access to reminders, delivery settings and HTTP POST/Bash automations.
+                            <small>Tokens grant access to reminders, delivery settings and HTTP POST automations.
+                                Bash requires separate administrator opt-in.
                                 Share only with trusted agents.</small>
                         </div>
                     </li>
@@ -564,17 +565,16 @@
                         placeholder="Daily report"></label>
                 <label>Task type<select name="kind">
                         <option value="http" {{if ne .Job.Kind "bash" }}selected{{end}}>HTTP POST</option>
-                        <option value="bash" {{if eq .Job.Kind "bash" }}selected{{end}}>Bash script</option>
+                        <option value="bash" {{if eq .Job.Kind "bash" }}selected{{end}} {{if not .BashEnabled}}disabled{{end}}>Bash script{{if not .BashEnabled}} (disabled){{end}}</option>
                     </select></label>
                 <label data-task-kind="bash" {{if ne .Job.Kind "bash" }}hidden{{end}}>Bash script<div
                         class="bash-editor">
                         <pre aria-hidden="true"></pre><textarea aria-label="Bash script" wrap="off" autocapitalize="off"
                             autocomplete="off" name="script" rows="10" maxlength="65536"
                             spellcheck="false">{{.Job.Script}}</textarea>
-                    </div><button type="button" class="run-button" data-bash-example hidden>Fill curl example</button>
-                    <small>Replace the example URL and JSON body before running. Runs inside the service container as
-                        its user.
-                        Exit 0 means success; output is discarded.</small></label>
+                    </div><button type="button" class="run-button" data-bash-example hidden>Fill example</button>
+                    <small>Runs in an isolated, temporary workspace with no network, saved credentials, or persistent files.
+                        Exit 0 means success; output is discarded. Bash must be enabled by the administrator.</small></label>
                 <details class="advanced-options bash-tools" data-task-kind="bash" {{if ne .Job.Kind "bash"
                     }}hidden{{end}}>
                     <summary>Available Bash tools<small>Commands included in the standard container image</small>
@@ -609,8 +609,8 @@
                             <code>read</code> and <code>test</code>
                         </dd>
                     </dl>
-                    <p class="muted">Use <code>/data</code> for persistent files. Scripts run as the service user;
-                        install additional dependencies in a custom image.</p>
+                    <p class="muted">Use <code>/tmp</code> for temporary work (16 MiB maximum). Files are discarded after each run.
+                        Network tools are installed but network access is disabled.</p>
                 </details>
                 <div class="stack" data-task-kind="http" {{if eq .Job.Kind "bash" }}hidden{{end}}><label>Endpoint
                         URL<input name="url" type="url" value="{{.Job.URL}}"

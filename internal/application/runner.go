@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/fixtse/SchedulerSE/internal/domain"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,8 @@ type Runner struct {
 	Store         Runs
 	Log           Logger
 	Timeout       time.Duration
+	mu            sync.Mutex
+	active        int
 }
 
 func (r *Runner) Run(ctx context.Context, j domain.Job, slot string) (*domain.Outcome, error) {
@@ -59,16 +62,26 @@ func (r *Runner) Prepare(ctx context.Context, j domain.Job, slot string) (func()
 			j.Timezone = settings.Timezone
 		}
 	}
+	r.mu.Lock()
+	if r.active >= 4 {
+		r.mu.Unlock()
+		return nil, errors.New("execution capacity reached")
+	}
+	r.active++
+	r.mu.Unlock()
+	release := func() { r.mu.Lock(); r.active--; r.mu.Unlock() }
 	ok, err := r.Store.Begin(j, slot)
 	if err != nil {
+		release()
 		r.Log.Event("journal_error", map[string]any{"job": j.ID})
 		return nil, err
 	}
 	if !ok {
+		release()
 		r.Log.Event("run_skipped", map[string]any{"job": j.ID, "slot": slot})
 		return nil, nil
 	}
-	return func() (*domain.Outcome, error) { return r.execute(ctx, j, slot) }, nil
+	return func() (*domain.Outcome, error) { defer release(); return r.execute(ctx, j, slot) }, nil
 }
 
 func (r *Runner) execute(ctx context.Context, j domain.Job, slot string) (*domain.Outcome, error) {

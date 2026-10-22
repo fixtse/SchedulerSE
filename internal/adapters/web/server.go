@@ -78,8 +78,7 @@ type Server struct {
 	runs        sync.WaitGroup
 	closing     bool
 	authMu      sync.Mutex
-	attempts    int
-	window      time.Time
+	authSources map[string]authBucket
 	hashing     chan struct{}
 }
 type jobView struct {
@@ -112,6 +111,7 @@ type view struct {
 	HasBotToken                          bool
 	TestToken                            string
 	DefaultTimeoutMS                     int64
+	BashEnabled                          bool
 	HistoryPage, HistoryPages            int
 	HistoryTotal, HistoryFrom, HistoryTo int
 	PreviousPage, NextPage               int
@@ -336,18 +336,69 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{3,64}$`)
 
-func (s *Server) allowAuth() bool {
+type authBucket struct {
+	attempts int
+	window   time.Time
+}
+
+// Honor X-Forwarded-For only through explicitly configured proxy networks.
+// Walk from the trusted peer towards the first untrusted hop.
+func (s *Server) allowAuth(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	trusted := func(host string) bool {
+		ip := net.ParseIP(host)
+		if ip == nil {
+			return false
+		}
+		for _, network := range s.Config.TrustedProxies {
+			if network.Contains(ip) {
+				return true
+			}
+		}
+		return false
+	}
+	if trusted(host) {
+		chain := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+		for i := len(chain) - 1; i >= 0 && trusted(host); i-- {
+			next := strings.TrimSpace(chain[i])
+			if net.ParseIP(next) == nil {
+				break
+			}
+			host = next
+		}
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		host = ip.String()
+	}
+	if host == "" {
+		host = "unknown"
+	}
 	s.authMu.Lock()
 	defer s.authMu.Unlock()
 	now := time.Now()
-	if now.Sub(s.window) >= time.Minute {
-		s.window = now
-		s.attempts = 0
+	if s.authSources == nil {
+		s.authSources = make(map[string]authBucket)
 	}
-	if s.attempts >= 5 {
+	for source, bucket := range s.authSources {
+		if now.Sub(bucket.window) >= time.Minute {
+			delete(s.authSources, source)
+		}
+	}
+	bucket, exists := s.authSources[host]
+	if !exists {
+		if len(s.authSources) >= 4096 {
+			return false
+		}
+		bucket.window = now
+	}
+	if bucket.attempts >= 5 {
 		return false
 	}
-	s.attempts++
+	bucket.attempts++
+	s.authSources[host] = bucket
 	return true
 }
 func (s *Server) authPage(w http.ResponseWriter, r *http.Request, kind, user string, hash []byte) {
@@ -372,7 +423,7 @@ func (s *Server) authPage(w http.ResponseWriter, r *http.Request, kind, user str
 		http.Error(w, "Invalid form token; reload the page", 403)
 		return
 	}
-	if !s.allowAuth() {
+	if !s.allowAuth(r) {
 		w.Header().Set("Retry-After", "60")
 		v.Error = "Too many attempts. Try again in one minute."
 		render(w, 429, v)
@@ -579,6 +630,9 @@ func (s *Server) saveJob(w http.ResponseWriter, r *http.Request, csrf string, cr
 		j.Revision, _ = strconv.ParseInt(r.PostFormValue("revision"), 10, 64)
 	}
 	err := scheduleErr
+	if j.Kind == "bash" && !s.Config.EnableBash {
+		err = errors.New("Bash execution is disabled by the administrator")
+	}
 	if err == nil {
 		err = timeoutErr
 	}
@@ -590,8 +644,25 @@ func (s *Server) saveJob(w http.ResponseWriter, r *http.Request, csrf string, cr
 	}
 	status := 400
 	if err == nil {
-		err = s.Store.Save(j, create)
+		if !create {
+			previous, loadErr := s.Store.Job(j.ID)
+			if loadErr != nil {
+				err = loadErr
+			} else {
+				err = adapters.ValidateCredentialDestination(previous.URL, j.URL, previous.Authorization, j.Authorization)
+				if err == nil {
+					err = adapters.ValidateCredentialDestination(previous.FallbackURL, j.FallbackURL, previous.FallbackAuth, j.FallbackAuth)
+				}
+			}
+		}
 		if err != nil {
+			s.renderJob(w, 400, csrf, j, create, has, submittedSchedule(r.PostForm), err.Error())
+			return
+		}
+		err = s.Store.Save(j, create)
+		if errors.Is(err, adapters.ErrCapacity) {
+			status = 429
+		} else if err != nil {
 			status = 409
 			err = errors.New("Could not save: the ID already exists or this job changed. Reload and try again.")
 		}
@@ -609,7 +680,7 @@ func (s *Server) renderJob(w http.ResponseWriter, status int, csrf string, j dom
 	zone := adapters.JobTimezone(j, s.settings().Timezone)
 	hasFallback := j.FallbackAuth != ""
 	j.Authorization, j.FallbackAuth = "", ""
-	render(w, status, view{Page: "job", Title: "Edit automation", CSRF: csrf, Job: j, New: create, HasAuthorization: has, HasFallbackAuth: hasFallback, Timezone: zone, Schedule: schedule, Timezones: timezoneChoices(zone, s.settings().Timezone), Weekdays: weekdayChoices(schedule.Days), Error: message, RunToken: rand.Text(), DefaultTimeoutMS: s.defaultTimeout().Milliseconds()})
+	render(w, status, view{Page: "job", Title: "Edit automation", CSRF: csrf, Job: j, New: create, HasAuthorization: has, HasFallbackAuth: hasFallback, Timezone: zone, Schedule: schedule, Timezones: timezoneChoices(zone, s.settings().Timezone), Weekdays: weekdayChoices(schedule.Days), Error: message, RunToken: rand.Text(), DefaultTimeoutMS: s.defaultTimeout().Milliseconds(), BashEnabled: s.Config.EnableBash})
 }
 
 var runTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{26,128}$`)
@@ -675,6 +746,9 @@ func (s *Server) Wait() {
 }
 
 func (s *Server) validateRunnable(j domain.Job) error {
+	if j.Kind == "bash" && !s.Config.EnableBash {
+		return errors.New("Bash execution is disabled by the administrator")
+	}
 	telegram, err := s.Store.Telegram()
 	if err != nil {
 		return errors.New("notification settings unavailable")

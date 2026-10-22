@@ -80,7 +80,8 @@ Confirm the saved due time and destination. Cancellation uses DELETE on the task
 
 A token controls this installation's shared agent schedules and delivery connection,
 not just one conversation. It can configure polling/webhooks and create or run
-automations, including Bash scripts as the service user. Account, Telegram settings
+HTTP automations. Bash is disabled by default and requires separate administrator
+opt-in; enabled scripts run in an isolated offline sandbox without scheduler state. Account, Telegram settings
 and API token management belong in the web interface.
 Only inspect or cancel schedules relevant to the user's request. No API token or
 receiver credential belongs in `context` or a callback body.

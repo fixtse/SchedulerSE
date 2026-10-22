@@ -55,6 +55,10 @@ func (s *Server) agentAutomations(w http.ResponseWriter, r *http.Request) {
 		agentError(w, 400, err.Error())
 		return
 	}
+	if job.Kind == "bash" && (!s.Config.EnableBash || !s.Config.EnableAgentBash) {
+		agentError(w, 403, "Agent Bash execution is disabled by the administrator")
+		return
+	}
 	if job.Enabled && job.Cron != "" {
 		if err := s.validateRunnable(job); err != nil {
 			agentError(w, 400, err.Error())
@@ -62,6 +66,10 @@ func (s *Server) agentAutomations(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.Store.Save(job, true); err != nil {
+		if errors.Is(err, adapters.ErrCapacity) {
+			agentError(w, 429, err.Error())
+			return
+		}
 		if _, exists := s.Store.Job(job.ID); exists == nil {
 			agentError(w, 409, "ID already exists; inspect the saved automation before retrying")
 		} else {
@@ -112,6 +120,10 @@ func (s *Server) agentRunAutomation(w http.ResponseWriter, r *http.Request) {
 	}
 	job, ok := s.loadAgentAutomation(w, r)
 	if !ok {
+		return
+	}
+	if job.Kind == "bash" && (!s.Config.EnableBash || !s.Config.EnableAgentBash) {
+		agentError(w, 403, "Agent Bash execution is disabled by the administrator")
 		return
 	}
 	if input.Revision != job.Revision {

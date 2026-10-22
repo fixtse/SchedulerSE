@@ -52,7 +52,7 @@ func (s *Server) passwordRecovery(w http.ResponseWriter, r *http.Request, kind s
 		render(w, 200, v)
 		return
 	}
-	if !s.allowAuth() {
+	if !s.allowAuth(r) {
 		w.Header().Set("Retry-After", "60")
 		v.Error = "Too many attempts. Try again in one minute."
 		render(w, 429, v)

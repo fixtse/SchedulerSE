@@ -39,8 +39,22 @@ func (s *Store) SaveAgentConnection(mode, endpoint, auth string) error {
 	if mode != "poll" && mode != "webhook" {
 		return errors.New("invalid delivery mode")
 	}
-	_, err := s.DB.Exec(`UPDATE agent_settings SET delivery_mode=?,webhook_url=?,webhook_auth=? WHERE id=1`, mode, endpoint, auth)
-	return err
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var oldURL, oldAuth string
+	if err = tx.QueryRow("SELECT webhook_url,webhook_auth FROM agent_settings WHERE id=1").Scan(&oldURL, &oldAuth); err != nil {
+		return err
+	}
+	if err = ValidateCredentialDestination(oldURL, endpoint, oldAuth, auth); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`UPDATE agent_settings SET delivery_mode=?,webhook_url=?,webhook_auth=? WHERE id=1`, mode, endpoint, auth); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 func (s *Store) SetAgentToken(hash string) error {
 	_, err := s.DB.Exec(`UPDATE agent_settings SET token_hash=? WHERE id=1`, hash)
@@ -75,8 +89,18 @@ func (s *Store) AgentTask(id string) (domain.AgentTask, error) {
 	return scanAgent(s.DB.QueryRow(`SELECT `+agentColumns+` FROM agent_tasks WHERE id=?`, id))
 }
 func (s *Store) CreateAgentTask(v domain.AgentTask) error {
-	_, err := s.DB.Exec(`INSERT INTO agent_tasks(id,kind,title,message,context,run_at,interval_seconds) VALUES(?,?,?,?,?,?,?)`, v.ID, v.Kind, v.Title, v.Message, string(v.Context), v.RunAt, v.IntervalSeconds)
-	return err
+	result, err := s.DB.Exec(`INSERT INTO agent_tasks(id,kind,title,message,context,run_at,interval_seconds) SELECT ?,?,?,?,?,?,? WHERE (SELECT count(*) FROM agent_tasks)<1000`, v.ID, v.Kind, v.Title, v.Message, string(v.Context), v.RunAt, v.IntervalSeconds)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrCapacity
+	}
+	return nil
 }
 func (s *Store) CancelAgentTask(id string) (bool, error) {
 	result, err := s.DB.Exec(`UPDATE agent_tasks SET status='cancelled' WHERE id=? AND status='pending'`, id)
@@ -192,6 +216,13 @@ func (s *Store) PickupAgentTask(id string, at int64, consumer string) (bool, err
 	if task.IntervalSeconds > 0 {
 		status = "pending"
 		next = task.RunAt + ((time.Now().Unix()-task.RunAt)/task.IntervalSeconds+1)*task.IntervalSeconds
+	}
+	var receipts int
+	if err = tx.QueryRow("SELECT count(*) FROM agent_pickups").Scan(&receipts); err != nil {
+		return false, err
+	}
+	if receipts >= 100000 {
+		return false, ErrCapacity
 	}
 	if _, err = tx.Exec(`INSERT INTO agent_pickups(task_id,run_at,consumer_id) VALUES(?,?,?)`, id, at, consumer); err != nil {
 		return false, err

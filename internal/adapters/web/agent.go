@@ -169,6 +169,10 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 	}
 	task := domain.AgentTask{ID: input.ID, Kind: input.Kind, Title: input.Title, Message: input.Message, Context: input.Context, RunAt: at.Unix(), IntervalSeconds: input.IntervalSeconds, Status: "pending"}
 	if err = s.Store.CreateAgentTask(task); err != nil {
+		if errors.Is(err, adapters.ErrCapacity) {
+			agentError(w, 429, err.Error())
+			return
+		}
 		if _, existsErr := s.Store.AgentTask(input.ID); existsErr == nil {
 			agentError(w, 409, "ID already exists; GET the existing task before retrying")
 		} else {
@@ -259,6 +263,10 @@ func (s *Server) saveAgentSettings(w http.ResponseWriter, r *http.Request, csrf,
 		err = errors.New("Webhook URL or authorization header is invalid or too long")
 	}
 	if err != nil {
+		s.renderAgentSettings(w, r, 400, csrf, user, "", "", err.Error())
+		return
+	}
+	if err = adapters.ValidateCredentialDestination(settings.WebhookURL, endpoint, settings.WebhookAuth, auth); err != nil {
 		s.renderAgentSettings(w, r, 400, csrf, user, "", "", err.Error())
 		return
 	}
@@ -410,6 +418,7 @@ func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
 			agentError(w, 400, "Provide delivery_mode poll or webhook, and optional webhook_url and webhook_authorization")
 			return
 		}
+		oldURL, oldAuth := settings.WebhookURL, settings.WebhookAuth
 		settings.DeliveryMode = input.DeliveryMode
 		if input.WebhookURL != nil {
 			settings.WebhookURL = strings.TrimSpace(*input.WebhookURL)
@@ -431,14 +440,20 @@ func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
 			agentError(w, 400, "Webhook delivery requires a webhook_url")
 			return
 		}
+		if err = adapters.ValidateCredentialDestination(oldURL, settings.WebhookURL, oldAuth, settings.WebhookAuth); err != nil {
+			agentError(w, 400, err.Error())
+			return
+		}
 		if err = s.Store.SaveAgentConnection(settings.DeliveryMode, settings.WebhookURL, settings.WebhookAuth); err != nil {
 			agentError(w, 503, "Could not save agent connection")
 			return
 		}
 	}
 	agentJSON(w, 200, struct {
-		DeliveryMode   string `json:"delivery_mode"`
-		WebhookURL     string `json:"webhook_url"`
-		HasWebhookAuth bool   `json:"has_webhook_authorization"`
-	}{settings.DeliveryMode, settings.WebhookURL, settings.WebhookAuth != ""})
+		DeliveryMode     string `json:"delivery_mode"`
+		WebhookURL       string `json:"webhook_url"`
+		HasWebhookAuth   bool   `json:"has_webhook_authorization"`
+		BashEnabled      bool   `json:"bash_enabled"`
+		AgentBashEnabled bool   `json:"agent_bash_enabled"`
+	}{settings.DeliveryMode, settings.WebhookURL, settings.WebhookAuth != "", s.Config.EnableBash, s.Config.EnableBash && s.Config.EnableAgentBash})
 }

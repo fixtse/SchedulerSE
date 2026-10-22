@@ -274,11 +274,11 @@ func TestManagementPersistenceSecretsAndConcurrentChanges(t *testing.T) {
 func TestAuthRateLimitAndHealth(t *testing.T) {
 	f := fixture(t)
 	for range 5 {
-		if !f.app.allowAuth() {
+		if !f.app.allowAuth(httptest.NewRequest("POST", "/login", nil)) {
 			t.Fatal("early rate limit")
 		}
 	}
-	if f.app.allowAuth() {
+	if f.app.allowAuth(httptest.NewRequest("POST", "/login", nil)) {
 		t.Fatal("rate limit missing")
 	}
 	code, body := f.get(t, "/health")
@@ -418,6 +418,7 @@ func TestScheduleManagementAndManualExecution(t *testing.T) {
 	// A legacy saved task can also run manually, preserving its string payload.
 	incremental, _ := f.store.Job("youtube-incremental")
 	incremental.URL = mock.URL
+	incremental.Authorization = "Bearer local-test-credential"
 	incremental.Enabled = false
 	if err := f.store.Save(incremental, false); err != nil {
 		t.Fatal(err)
@@ -459,6 +460,7 @@ func TestScheduleManagementAndManualExecution(t *testing.T) {
 
 func TestManualBashAutomationOmitsSchedulingControls(t *testing.T) {
 	f := fixture(t)
+	f.app.Config.EnableBash = true
 	token := f.setup(t)
 	form := url.Values{"csrf": {token}, "id": {"manual-script"}, "name": {"Manual script"}, "kind": {"bash"}, "script": {"echo hello"}, "schedule_mode": {"manual"}, "enabled": {"on"}, "recovery_settings": {"1"}, "retry_count": {"3"}, "fallback_url": {"https://example.com/fallback"}}
 	code, body, _ := f.post(t, "/jobs/new", form)
