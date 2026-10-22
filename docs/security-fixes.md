@@ -89,3 +89,16 @@ exits and the kernel destroys the namespace with all detached descendants.
 The original exit/timeout regression test remains intact; a new regression clears
 the script's parent-death signal explicitly. It reproduced the leak before this
 change and passes with the supervisor retained.
+
+## Patched Go toolchain
+
+CI and the container builder use Go 1.27.3. The module also requires Go 1.27.3
+so local builds cannot silently use an older vulnerable standard library.
+This addresses [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809), whose fix is in
+Go 1.27.3. Keep the vulnerability scan enabled; dependency changes alone cannot
+patch the standard library linked into the application. Existing images must be
+rebuilt with the patched builder to receive this fix.
+
+Verified with the actual Go 1.27.3 toolchain: govulncheck v1.9.0 reports no reachable
+vulnerabilities, and `make format-check check test compose-check` passes with
+`REQUIRE_SCRIPT_SANDBOX=true`. The `golang:1.27.3-alpine` image manifest is available.
