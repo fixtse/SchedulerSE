@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -49,10 +50,30 @@ func CheckScriptSandbox() error {
 	if err != nil {
 		return errors.New("Bash requires bubblewrap and prlimit")
 	}
-	if cmd.Run() != nil {
-		return errors.New("Bash sandbox unavailable: check unprivileged user namespaces and container policy")
+	// Only the fixed `true` probe captures diagnostics. User-authored scripts
+	// still discard output, and the bounded writer cannot grow without limit.
+	var diagnostic sandboxDiagnostic
+	cmd.Stderr = &diagnostic
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(string(diagnostic))
+		if detail == "" {
+			detail = "check unprivileged user namespaces, AppArmor and container policy"
+		}
+		return fmt.Errorf("Bash sandbox unavailable: %s: %w", detail, err)
 	}
 	return nil
+}
+
+type sandboxDiagnostic []byte
+
+func (d *sandboxDiagnostic) Write(p []byte) (int, error) {
+	n := len(p)
+	remaining := 4096 - len(*d)
+	if len(p) > remaining {
+		p = p[:remaining]
+	}
+	*d = append(*d, p...)
+	return n, nil
 }
 
 // Output is discarded. Every run has a hard deadline even outside the Runner.

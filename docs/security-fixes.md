@@ -55,3 +55,22 @@ The namespace tests may skip on unsupported developer hosts unless
   were removed by the test.
 
 No production deployment, live credentials or existing agent connections were changed.
+
+## Ubuntu 24.04 CI policy
+
+Ubuntu 24.04 restricts capabilities in unprivileged user namespaces unless the
+sandbox helper has an appropriate AppArmor profile. Installing Bubblewrap alone
+is insufficient on runners where that profile has not been enabled. CI now
+installs `apparmor-profiles` and loads the distro `bwrap-userns-restrict` policy
+when the Ubuntu restriction is enabled. This retains the host-wide restriction
+and the distro policy's restrictions on sandbox children; it does not disable
+AppArmor or run the tests as root. `REQUIRE_SCRIPT_SANDBOX=true` remains mandatory.
+
+The fixed startup probe now includes up to 4 KiB of Bubblewrap stderr on failure,
+so policy denials and unsupported flags are visible. Only the fixed `true` probe
+captures diagnostics; user-authored script output is still discarded. Native
+regression checks cannot reproduce the hosted runner's AppArmor kernel policy;
+the updated workflow must be rerun there to verify that policy installation.
+
+References: [Ubuntu's namespace restrictions](https://documentation.ubuntu.com/release-notes/24.04/#unprivileged-user-namespace-restrictions)
+and the [upstream distro policy](https://gitlab.com/apparmor/apparmor/-/blob/v4.0.1/profiles/apparmor/profiles/extras/bwrap-userns-restrict).

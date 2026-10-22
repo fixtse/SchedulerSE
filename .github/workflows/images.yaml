@@ -26,7 +26,21 @@ jobs:
           go-version: '1.27.2'
           cache: true
       - name: Install isolated Bash test dependencies
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap util-linux
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap util-linux apparmor-profiles
+      - name: Enable distro Bubblewrap AppArmor policy for sandbox tests
+        shell: bash
+        run: |
+          # Ubuntu 24.04 mediates unprivileged user namespaces. Permit the
+          # sandbox helper through the distro policy, keeping global restrictions
+          # and the policy's capability restrictions on sandbox children intact.
+          restriction=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [[ -f "$restriction" && "$(cat "$restriction")" == "1" ]]; then
+            profile=/etc/apparmor.d/bwrap-userns-restrict
+            if [[ ! -f "$profile" ]]; then
+              sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict "$profile"
+            fi
+            sudo apparmor_parser --replace "$profile"
+          fi
       - name: Verify Go and Compose
         env:
           REQUIRE_SCRIPT_SANDBOX: "true"

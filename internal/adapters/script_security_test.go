@@ -103,3 +103,34 @@ func TestScriptSandboxFileBudget(t *testing.T) {
 		t.Fatal("file size budget not enforced")
 	}
 }
+
+func TestSandboxProbeReportsHelperDiagnostic(t *testing.T) {
+	dir := t.TempDir()
+	helper := "#!/bin/sh\nprintf '%s\\n' 'bwrap: namespace denied by test policy' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "bwrap"), []byte(helper), 0700); err != nil {
+		t.Fatal(err)
+	}
+	// The failing helper never invokes prlimit; keep this diagnostic test
+	// independent of installed sandbox dependencies.
+	if err := os.WriteFile(filepath.Join(dir, "prlimit"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	err := CheckScriptSandbox()
+	if err == nil || !strings.Contains(err.Error(), "bwrap: namespace denied by test policy") {
+		t.Fatalf("missing helper diagnostic: %v", err)
+	}
+}
+
+func TestSandboxProbeDiagnosticIsBounded(t *testing.T) {
+	var diagnostic sandboxDiagnostic
+	input := []byte(strings.Repeat("x", 8192))
+	for range 3 {
+		if n, err := diagnostic.Write(input); n != len(input) || err != nil {
+			t.Fatal("diagnostic changed writer semantics", n, err)
+		}
+	}
+	if len(diagnostic) != 4096 {
+		t.Fatal("unbounded diagnostic", len(diagnostic))
+	}
+}
