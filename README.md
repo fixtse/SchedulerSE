@@ -116,7 +116,8 @@ printf '%s\n' '{"message":"Hello from SchedulerSE"}' > /tmp/message.json
 jq -e '.message | length > 0' /tmp/message.json > /dev/null
 ```
 
-Each run has its own PID namespace. Completion or timeout destroys its descendants,
+Each run has its own PID namespace with Bubblewrap retained as its PID 1 supervisor.
+Completion or timeout destroys its descendants,
 including detached processes. Process limits cap address space at 256 MiB, CPU time
 at 30 seconds per process, file size at 16 MiB, open files at 128, and processes at
 64 per sandbox user namespace. The execution timeout is also enforced, initially

@@ -7,8 +7,8 @@ The six findings in `security-audit-2026-10-22.md` are addressed as follows:
   exposing only read-only commands/libraries, a private `/tmp`, private processes,
   and no network or inherited credentials. Existing saved Bash cannot bypass the
   execution adapter's disable switch.
-- SEC-02: every shell is PID 1 of its own PID namespace, so both successful exit
-  and cancellation destroy detached descendants. No process-group-only fallback
+- SEC-02: Bubblewrap retains its trusted PID 1 supervisor in each PID namespace,
+  so both successful exit and cancellation destroy detached descendants. No process-group-only fallback
   remains. Further user namespaces are disabled inside the sandbox.
 - SEC-03: four simultaneous executions, bounded record counts and database growth,
   per-process limits, bounded temporary storage, and Compose CPU/memory/PID/log
@@ -74,3 +74,18 @@ the updated workflow must be rerun there to verify that policy installation.
 
 References: [Ubuntu's namespace restrictions](https://documentation.ubuntu.com/release-notes/24.04/#unprivileged-user-namespace-restrictions)
 and the [upstream distro policy](https://gitlab.com/apparmor/apparmor/-/blob/v4.0.1/profiles/apparmor/profiles/extras/bwrap-userns-restrict).
+
+## Cancellation across AppArmor exec transitions
+
+The runner no longer uses Bubblewrap's `--as-pid-1` option. With that option the
+script replaced namespace init, so clearing its parent-death signal could let the
+namespace survive cancellation of the outer launcher. AppArmor exec transitions
+can clear that signal, and a script can explicitly clear it with `setpriv` too.
+
+Bubblewrap now retains its built-in PID 1 supervisor. Its lifecycle remains tied
+to the launcher, independent of the script's exec transitions and signal state.
+When the main script exits, or cancellation kills the launcher, the supervisor
+exits and the kernel destroys the namespace with all detached descendants.
+The original exit/timeout regression test remains intact; a new regression clears
+the script's parent-death signal explicitly. It reproduced the leak before this
+change and passes with the supervisor retained.

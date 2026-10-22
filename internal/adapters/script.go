@@ -13,7 +13,10 @@ import (
 )
 
 // No host root, /data, home, environment, sockets, or network are exposed.
-// PID 1 exiting destroys the whole PID namespace, including setsid descendants.
+// Keep Bubblewrap's trusted PID 1 supervisor: --as-pid-1 would exec the
+// script as init, where an AppArmor transition or the script can clear its
+// parent-death signal. Killing the launcher must instead kill the supervisor
+// and destroy the namespace, including all setsid descendants.
 func sandboxArgs(limit string) []string {
 	args := []string{"--unshare-all", "--unshare-user", "--disable-userns", "--die-with-parent", "--new-session", "--clearenv", "--cap-drop", "ALL"}
 	for _, path := range []string{"/usr/bin", "/usr/lib", "/usr/lib64", "/bin", "/lib", "/lib64"} {
@@ -21,7 +24,7 @@ func sandboxArgs(limit string) []string {
 			args = append(args, "--ro-bind", path, path)
 		}
 	}
-	return append(args, "--proc", "/proc", "--dev", "/dev", "--size", "16777216", "--tmpfs", "/tmp", "--remount-ro", "/", "--chdir", "/tmp", "--setenv", "PATH", "/usr/bin:/bin", "--setenv", "HOME", "/tmp", "--as-pid-1", "--", limit, "--as=268435456", "--cpu=30", "--fsize=16777216", "--nofile=128", "--nproc=64", "--", "/bin/bash", "--noprofile", "--norc", "-e", "-o", "pipefail")
+	return append(args, "--proc", "/proc", "--dev", "/dev", "--size", "16777216", "--tmpfs", "/tmp", "--remount-ro", "/", "--chdir", "/tmp", "--setenv", "PATH", "/usr/bin:/bin", "--setenv", "HOME", "/tmp", "--", limit, "--as=268435456", "--cpu=30", "--fsize=16777216", "--nofile=128", "--nproc=64", "--", "/bin/bash", "--noprofile", "--norc", "-e", "-o", "pipefail")
 }
 
 func scriptCommand(ctx context.Context, script string) (*exec.Cmd, error) {

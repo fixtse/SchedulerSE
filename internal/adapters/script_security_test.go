@@ -134,3 +134,26 @@ func TestSandboxProbeDiagnosticIsBounded(t *testing.T) {
 		t.Fatal("unbounded diagnostic", len(diagnostic))
 	}
 }
+
+// AppArmor credential transitions can clear PR_SET_PDEATHSIG on exec. A script
+// can clear its own parent-death signal too: teardown must not rely on it.
+func TestScriptSandboxCancellationSurvivesClearedParentDeathSignal(t *testing.T) {
+	requireSandbox(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	script := `exec setpriv --pdeathsig clear bash -c 'setsid bash -c "sleep 1; echo escaped" </dev/null & sleep 2'`
+	cmd, err := scriptCommand(ctx, script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	started := time.Now()
+	_ = cmd.Run()
+	if ctx.Err() == nil {
+		t.Fatal("script did not reach cancellation")
+	}
+	if strings.Contains(output.String(), "escaped") || time.Since(started) > 900*time.Millisecond {
+		t.Fatal("cancellation left a detached child alive", output.String())
+	}
+}
