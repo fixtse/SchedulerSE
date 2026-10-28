@@ -1,6 +1,12 @@
 'use strict';
 
 function initializePage(root = document) {
+  const activityStatus = root.querySelector('#activity-status');
+  if (activityStatus && !activityStatus.dataset.initialized) {
+    activityStatus.dataset.initialized = 'true';
+    activityStatus.addEventListener('change', () => activityStatus.form.requestSubmit());
+  }
+
   const frequency = root.querySelector('[name="schedule_mode"]');
   if (frequency && !frequency.dataset.scheduleInitialized) {
     frequency.dataset.scheduleInitialized = 'true';

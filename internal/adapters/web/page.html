@@ -147,7 +147,6 @@
                 <option value="fallback" {{if eq .HistoryStatus "fallback"}}selected{{end}}>Fallback</option>
                 <option value="interrupted" {{if eq .HistoryStatus "interrupted"}}selected{{end}}>Interrupted</option>
             </select>
-            <button class="run-button">Filter</button>
         </form>
         {{if .Runs}}<div class="activity-list">
             <div class="activity-header" aria-hidden="true"><span>Automation</span><span>Started
@@ -269,7 +268,6 @@
                 <p>Connect your agent through MCP in Agent API settings, then ask it to create a reminder.</p>
             </div>{{end}}</div>
         {{else if eq .Page "agent-settings"}}
-        {{if .ZeroPairings}}<section class="panel stack"><h2>Zero connections</h2><p class="muted">Review or revoke API access. Existing schedules and delivery settings are preserved.</p>{{range .ZeroPairings}}<a href="/pairing/{{.}}">Review Zero connection {{.}}</a>{{end}}</section>{{end}}
         {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
         {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}
         <div class="agent-layout">
