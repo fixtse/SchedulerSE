@@ -14,21 +14,48 @@ type HistoryPage struct {
 }
 
 func (s *Store) History(page, size int) (HistoryPage, error) {
+	return s.history(page, size, "", false)
+}
+
+// RecentHistory filters within the latest 200 executions without removing audit
+// records used by execution deduplication and the agent API.
+func (s *Store) RecentHistory(page, size int, status string) (HistoryPage, error) {
+	return s.history(page, size, status, true)
+}
+
+func (s *Store) history(page, size int, status string, recent bool) (HistoryPage, error) {
 	result := HistoryPage{Runs: []domain.Run{}, Page: page}
 	if page < 1 || size < 1 || size > 100 {
 		return result, errors.New("invalid history page")
+	}
+	source := "runs"
+	prefix := ""
+	where := ""
+	args := []any{}
+	if recent {
+		prefix = `WITH recent_runs AS (SELECT rowid AS run_order,* FROM runs ORDER BY started DESC,rowid DESC LIMIT 200) `
+		source = "recent_runs"
+	}
+	if status != "" {
+		where = " WHERE status=?"
+		args = append(args, status)
 	}
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return result, err
 	}
 	defer tx.Rollback()
-	if err = tx.QueryRow("SELECT count(*) FROM runs").Scan(&result.Total); err != nil {
+	if err = tx.QueryRow(prefix+"SELECT count(*) FROM "+source+where, args...).Scan(&result.Total); err != nil {
 		return result, err
 	}
 	result.Pages = max(1, (result.Total+size-1)/size)
 	result.Page = min(page, result.Pages)
-	rows, err := tx.Query(`SELECT job,slot,status,notification,started,COALESCE(finished,''),job_name,job_revision,timeout_ms,http_status,error_code,duration_ms,attempts,fallback_used FROM runs ORDER BY started DESC,rowid DESC LIMIT ? OFFSET ?`, size, (result.Page-1)*size)
+	order := "rowid"
+	if recent {
+		order = "run_order"
+	}
+	args = append(args, size, (result.Page-1)*size)
+	rows, err := tx.Query(prefix+`SELECT job,slot,status,notification,started,COALESCE(finished,''),job_name,job_revision,timeout_ms,http_status,error_code,duration_ms,attempts,fallback_used FROM `+source+where+` ORDER BY started DESC,`+order+` DESC LIMIT ? OFFSET ?`, args...)
 	if err != nil {
 		return result, err
 	}

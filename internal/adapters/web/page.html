@@ -135,8 +135,20 @@
                 </div>
             </article>{{end}}</div>
         <div class="section-label history-heading" id="activity">
-            <h2>Recent activity</h2><span>{{.HistoryTotal}} executions · 25 per page · UTC history</span>
+            <h2>Recent activity</h2><span>Latest 200 executions · 25 per page · UTC history</span>
         </div>
+        <form class="history-filter" hx-boost="false" method="get" action="/#activity">
+            <label for="activity-status">Status</label>
+            <select id="activity-status" name="status">
+                <option value="">All statuses</option>
+                <option value="running" {{if eq .HistoryStatus "running"}}selected{{end}}>Running</option>
+                <option value="success" {{if eq .HistoryStatus "success"}}selected{{end}}>Success</option>
+                <option value="failed" {{if eq .HistoryStatus "failed"}}selected{{end}}>Failed</option>
+                <option value="fallback" {{if eq .HistoryStatus "fallback"}}selected{{end}}>Fallback</option>
+                <option value="interrupted" {{if eq .HistoryStatus "interrupted"}}selected{{end}}>Interrupted</option>
+            </select>
+            <button class="run-button">Filter</button>
+        </form>
         {{if .Runs}}<div class="activity-list">
             <div class="activity-header" aria-hidden="true"><span>Automation</span><span>Started
                     (UTC)</span><span>Result</span><span>Notification</span><span></span></div>
@@ -211,14 +223,16 @@
         </div>
         <nav class="history-pagination" aria-label="Execution history pages"><span>Showing
                 {{.HistoryFrom}}–{{.HistoryTo}} of {{.HistoryTotal}}</span>
-            <div>{{if .PreviousPage}}<a href="/?page={{.PreviousPage}}#activity" rel="prev">← Newer</a>{{else}}<span
+            <div>{{if .PreviousPage}}<a href="/?page={{.PreviousPage}}{{if .HistoryStatus}}&amp;status={{.HistoryStatus}}{{end}}#activity" rel="prev">← Newer</a>{{else}}<span
                     aria-disabled="true">← Newer</span>{{end}}<span>Page {{.HistoryPage}} of
-                    {{.HistoryPages}}</span>{{if .NextPage}}<a href="/?page={{.NextPage}}#activity" rel="next">Older
+                    {{.HistoryPages}}</span>{{if .NextPage}}<a href="/?page={{.NextPage}}{{if .HistoryStatus}}&amp;status={{.HistoryStatus}}{{end}}#activity" rel="next">Older
                     →</a>{{else}}<span aria-disabled="true">Older →</span>{{end}}</div>
         </nav>
         {{else}}<div class="empty"><span>◷</span>
-            <h3>Nothing has run yet</h3>
-            <p>Execution results will appear here. Saving an automation never runs it.</p>
+            {{if .HistoryStatus}}<h3>No matching executions</h3>
+            <p>No executions with this status in the latest 200 entries. Choose another status to see more activity.</p>
+            {{else}}<h3>Nothing has run yet</h3>
+            <p>Execution results will appear here. Saving an automation never runs it.</p>{{end}}
         </div>{{end}}
         {{else if eq .Page "agent"}}
         <div class="page-heading">

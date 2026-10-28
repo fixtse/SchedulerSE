@@ -113,6 +113,7 @@ type view struct {
 	TestToken                            string
 	DefaultTimeoutMS                     int64
 	BashEnabled                          bool
+	HistoryStatus                        string
 	HistoryPage, HistoryPages            int
 	HistoryTotal, HistoryFrom, HistoryTo int
 	PreviousPage, NextPage               int
@@ -515,17 +516,28 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request, csrf, user st
 			return
 		}
 	}
+	status := r.URL.Query().Get("status")
+	switch status {
+	case "", "running", "success", "failed", "fallback", "interrupted":
+	default:
+		http.Error(w, "Invalid activity status", http.StatusBadRequest)
+		return
+	}
 	const pageSize = 25
-	history, err := s.Store.History(page, pageSize)
+	history, err := s.Store.RecentHistory(page, pageSize, status)
 	if err != nil {
 		http.Error(w, "Execution history unavailable", 503)
 		return
 	}
 	if page != history.Page {
-		redirect(w, r, "/?page="+strconv.Itoa(history.Page)+"#activity")
+		target := "/?page=" + strconv.Itoa(history.Page)
+		if status != "" {
+			target += "&status=" + url.QueryEscape(status)
+		}
+		redirect(w, r, target+"#activity")
 		return
 	}
-	v := view{Page: "dashboard", Title: "Your automations", CSRF: csrf, Username: user, Timezone: s.settings().Timezone, HistoryPage: history.Page, HistoryPages: history.Pages, HistoryTotal: history.Total}
+	v := view{Page: "dashboard", Title: "Your automations", CSRF: csrf, Username: user, Timezone: s.settings().Timezone, HistoryStatus: status, HistoryPage: history.Page, HistoryPages: history.Pages, HistoryTotal: history.Total}
 	for _, run := range history.Runs {
 		v.Runs = append(v.Runs, executionView(run))
 	}

@@ -67,3 +67,45 @@ func TestHistoryPaginationAndExecutionSnapshots(t *testing.T) {
 		}
 	}
 }
+
+func TestRecentHistoryCapsBeforeFiltering(t *testing.T) {
+	t.Parallel()
+	s := testStore(t)
+	_, err := s.DB.Exec(`WITH RECURSIVE sequence(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM sequence WHERE n<240)
+ INSERT INTO runs(job,slot,status,started)
+ SELECT 'report',printf('run-%03d',n),CASE WHEN n<=40 THEN 'interrupted' WHEN n%2=0 THEN 'success' ELSE 'failed' END,'2026-10-28 12:00:00' FROM sequence`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.RecentHistory(1, 25, "")
+	if err != nil || all.Total != 200 || all.Pages != 8 || len(all.Runs) != 25 || all.Runs[0].Slot != "run-240" {
+		t.Fatalf("recent history: %+v, %v", all, err)
+	}
+	last, err := s.RecentHistory(999, 25, "")
+	if err != nil || last.Page != 8 || last.Runs[24].Slot != "run-041" {
+		t.Fatalf("recent boundary: %+v, %v", last, err)
+	}
+	for _, status := range []string{"success", "failed"} {
+		seen := map[string]bool{}
+		for page := 1; page <= 4; page++ {
+			filtered, err := s.RecentHistory(page, 25, status)
+			if err != nil || filtered.Total != 100 || filtered.Pages != 4 || len(filtered.Runs) != 25 {
+				t.Fatalf("filtered page: %+v, %v", filtered, err)
+			}
+			for _, run := range filtered.Runs {
+				if run.Status != status || seen[run.Slot] {
+					t.Fatal("incorrect or duplicate filtered execution", run)
+				}
+				seen[run.Slot] = true
+			}
+		}
+	}
+	empty, err := s.RecentHistory(1, 25, "interrupted")
+	if err != nil || empty.Total != 0 || empty.Pages != 1 || len(empty.Runs) != 0 {
+		t.Fatalf("filter included entries outside latest 200: %+v, %v", empty, err)
+	}
+	audit, err := s.History(1, 25)
+	if err != nil || audit.Total != 240 {
+		t.Fatal("recent activity changed full execution history", audit, err)
+	}
+}

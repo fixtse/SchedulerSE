@@ -60,3 +60,5 @@ input,textarea,select{border-radius:8px}input:focus,textarea:focus,select:focus{
 .bash-tools-list{margin:20px 0;display:grid;gap:8px}.bash-tools-list dt{font-size:12px;font-weight:600;color:var(--ink);margin-top:8px}.bash-tools-list dd{margin:0;color:var(--muted);font-size:12px;line-height:1.9;overflow-wrap:anywhere}.bash-tools code{color:#ffbd8a;font-size:12px}.bash-tools>.muted{font-size:12px}
 
 .pairing-workspace{max-width:760px;padding-bottom:40px}.pairing-workspace h1{font-size:30px;letter-spacing:-.8px}.pairing-workspace p{margin:0;overflow-wrap:anywhere}.pairing-workspace input{width:100%;min-width:0}.pairing-workspace form button{width:100%}.pairing-workspace form button:not(.primary){padding:10px;background:#101b2e;border:1px solid var(--line);border-radius:7px;color:var(--ink)}
+
+.history-filter{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}.history-filter label{font-size:12px;color:var(--muted)}.history-filter select{width:auto;min-width:150px}.history-filter .run-button{margin:0}

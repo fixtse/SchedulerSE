@@ -59,6 +59,25 @@ func TestHistoryPagesAndExpandableDetails(t *testing.T) {
 			t.Fatalf("invalid history page %q accepted", value)
 		}
 	}
+	code, body = f.get(t, "/?status=failed")
+	if code != 200 || !strings.Contains(body, `value="failed" selected`) || !strings.Contains(body, `page=2&amp;status=failed#activity`) {
+		t.Fatal("filter selection or pagination was lost")
+	}
+	response, err = f.client.Get(f.server.URL + "/?page=999&status=failed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != 303 || response.Header.Get("Location") != "/?page=3&status=failed#activity" {
+		t.Fatal("clamped page lost status filter", response.Header)
+	}
+	code, body = f.get(t, "/?status=success")
+	if code != 200 || !strings.Contains(body, "No matching executions") || strings.Contains(body, `<details class="activity-run">`) {
+		t.Fatal("empty status filter did not show its own empty state")
+	}
+	if code, _ = f.get(t, "/?status=invalid"); code != 400 {
+		t.Fatal("invalid status accepted", code)
+	}
 }
 
 func TestLegacyAndRunningExecutionDetails(t *testing.T) {
