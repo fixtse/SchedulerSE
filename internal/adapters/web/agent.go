@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	_ "embed"
@@ -45,10 +46,25 @@ func (s *Server) agentAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth := r.Header.Get("Authorization")
-	if settings.TokenHash == "" || !strings.HasPrefix(auth, "Bearer ") || !equal(digest(strings.TrimPrefix(auth, "Bearer ")), settings.TokenHash) {
+	primary := settings.TokenHash != "" && strings.HasPrefix(auth, "Bearer ") && equal(digest(strings.TrimPrefix(auth, "Bearer ")), settings.TokenHash)
+	paired := false
+	if !primary && strings.HasPrefix(auth, "Bearer ") {
+		paired, err = s.Store.PairedAgentToken(digest(strings.TrimPrefix(auth, "Bearer ")))
+		if err != nil {
+			agentError(w, 503, "Pairing storage unavailable")
+			return
+		}
+	}
+	if !primary && !paired {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="agent-schedules"`)
 		agentError(w, 401, "A valid agent API token is required")
 		return
+	}
+	if paired {
+		if !s.allowPairedAgent(w, r) {
+			return
+		}
+		r = r.WithContext(context.WithValue(r.Context(), pairedAgentKey{}, true))
 	}
 	if r.URL.Path == "/api/agent/v1/mcp" {
 		s.serveMCP(w, r)
@@ -151,6 +167,10 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 		agentError(w, 400, "context must be a JSON object")
 		return
 	}
+	if r.Context().Value(pairedAgentKey{}) == true && !zeroTask(input.ID, input.Context) {
+		agentError(w, 403, "Paired access is limited to Zero reminders")
+		return
+	}
 	settings, err := s.Store.AgentSettings()
 	if err != nil {
 		agentError(w, 503, "Agent settings unavailable")
@@ -232,7 +252,12 @@ func (s *Server) renderAgentSettings(w http.ResponseWriter, r *http.Request, sta
 	endpoint := origin + "/api/agent/v1/mcp"
 	hasToken, hasAuth := settings.TokenHash != "", settings.WebhookAuth != ""
 	settings.TokenHash, settings.WebhookAuth = "", ""
-	render(w, status, view{Page: "agent-settings", MCPURL: endpoint, MCPClients: mcpClientConfigs(endpoint, token), AgentGuide: agentGuide, Title: "Agent API settings", CSRF: csrf, Username: user, AgentSettings: settings, HasAgentToken: hasToken, HasWebhookAuth: hasAuth, NewAgentToken: token, Notice: notice, Error: message})
+	pairings, err := s.Store.AgentPairingLinks()
+	if err != nil {
+		http.Error(w, "Pairing storage unavailable", 503)
+		return
+	}
+	render(w, status, view{ZeroPairings: pairings, Page: "agent-settings", MCPURL: endpoint, MCPClients: mcpClientConfigs(endpoint, token), AgentGuide: agentGuide, Title: "Agent API settings", CSRF: csrf, Username: user, AgentSettings: settings, HasAgentToken: hasToken, HasWebhookAuth: hasAuth, NewAgentToken: token, Notice: notice, Error: message})
 }
 func (s *Server) saveAgentSettings(w http.ResponseWriter, r *http.Request, csrf, user string) {
 	settings, err := s.Store.AgentSettings()

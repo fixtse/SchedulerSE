@@ -274,3 +274,31 @@ proxy addresses, ensure the proxy sanitizes forwarded headers, and block direct
 access to the backend. The server walks `X-Forwarded-For` from right to left until
 it reaches an untrusted hop. Leave this setting empty for direct connections.
 Enable secure cookies in General settings when serving through HTTPS.
+
+### Connect Zero without copying credentials
+
+In Zero, open Settings → SchedulerSE, enter this service's HTTPS URL and start the
+connection. Open the approval link, sign in to SchedulerSE, verify Zero's delivery
+address and approve. Return to Zero and check approval to save the connection.
+Requests expire after five minutes. Zero must have its externally reachable admin
+origin configured before starting; that origin is used for event delivery. HTTPS
+is required across the network; HTTP is accepted only for loopback development.
+
+The exchange sends credential digests to SchedulerSE; neither API token appears
+in browser responses. A paired token can only create, inspect and cancel Zero
+reminders and read delivery status. It cannot manage automations or reconfigure
+delivery. An existing connection with a different address or credential, a configured
+polling client, or active schedules on an unconfigured connection blocks approval.
+Nothing is migrated, cancelled or replayed. Existing manually configured connections
+continue working. Review or revoke paired API access under Settings → Agent API →
+Zero connections; revocation preserves schedules and event delivery.
+
+The local-network discovery of SchedulerSE services is not included in this flow;
+use the service URL. Refreshing Zero's admin page recovers a pending request, but
+restarting Zero expires its local handshake. On a lost registration or save response,
+use the status control; writes are never retried automatically.
+
+For isolated development, use `.devcontainer/devcontainer.json` (Go 1.27, CGO/SQLite
+and Docker). Run `make format-check check test build compose-check`. No credentials
+are required for tests. Keep runtime state outside the checkout and do not start a
+second development service against a production data directory.

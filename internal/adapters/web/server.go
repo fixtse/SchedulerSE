@@ -88,6 +88,7 @@ type jobView struct {
 	UsesTimezone bool
 }
 type view struct {
+	ZeroPairings                         []string
 	AppSettings                          domain.AppSettings
 	AgentGuide                           string
 	Remember                             bool
@@ -212,6 +213,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		styleAsset.ServeHTTP(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/pairing/") {
+		s.pairingAPI(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/agent/") {
 		s.agentAPI(w, r)
 		return
@@ -265,6 +270,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		csrf, err = s.Store.Session(digest(session.Value))
 	}
 	if err != nil || csrf == "" {
+		if id := strings.TrimPrefix(r.URL.Path, "/pairing/"); pairingID.MatchString(id) {
+			s.cookie(w, "pairing_return", id, 600)
+		}
 		redirect(w, r, "/login")
 		return
 	}
@@ -273,6 +281,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /pairing/{id}", func(w http.ResponseWriter, r *http.Request) { s.pairingApproval(w, r, csrf) })
+	mux.HandleFunc("POST /pairing/{id}", func(w http.ResponseWriter, r *http.Request) { s.pairingApproval(w, r, csrf) })
 	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) { s.settingsPage(w, r, csrf, username) })
 	mux.HandleFunc("POST /settings", func(w http.ResponseWriter, r *http.Request) { s.generalSettings(w, r, csrf, username) })
 	mux.HandleFunc("GET /settings/agent/delivery.zip", s.serveAgentDelivery)
@@ -484,6 +494,11 @@ func (s *Server) authPage(w http.ResponseWriter, r *http.Request, kind, user str
 	}
 	s.cookie(w, "session", token, int(lifetime/time.Second))
 	s.cookie(w, "preauth", "", -1)
+	if pending, err := r.Cookie("pairing_return"); err == nil && pairingID.MatchString(pending.Value) {
+		s.cookie(w, "pairing_return", "", -1)
+		redirect(w, r, "/pairing/"+pending.Value)
+		return
+	}
 	redirect(w, r, "/")
 }
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request, csrf, user string) {

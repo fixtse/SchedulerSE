@@ -26,7 +26,10 @@ func migrateAgent(db *sql.DB) error {
 	if hasMode == 0 {
 		_, err = db.Exec("ALTER TABLE agent_settings ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'webhook'")
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return migratePairing(db)
 }
 func (s *Store) AgentSettings() (v domain.AgentSettings, err error) {
 	err = s.DB.QueryRow(`SELECT token_hash,webhook_url,webhook_auth,delivery_mode FROM agent_settings WHERE id=1`).Scan(&v.TokenHash, &v.WebhookURL, &v.WebhookAuth, &v.DeliveryMode)
