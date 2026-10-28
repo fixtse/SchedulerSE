@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"github.com/fixtse/SchedulerSE/internal/domain"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -142,5 +144,75 @@ func TestZeroPairingExpiresAndReturnsToRequestAfterLogin(t *testing.T) {
 	code, _, res := f.post(t, "/login", url.Values{"csrf": {csrf(t, page)}, "username": {"owner"}, "password": {"correct-horse-battery"}})
 	if code != 303 || res.Header.Get("Location") != "/pairing/"+id {
 		t.Fatal("login lost pairing destination", code, res.Header.Get("Location"))
+	}
+}
+
+func TestZeroPairingBrowserFormOrigins(t *testing.T) {
+	f := fixture(t)
+	if err := f.store.CreateAccount("owner", []byte("unused-test-hash")); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.AddSession(digest("pairing-browser-session"), "pairing-browser-csrf", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	base, _ := url.Parse(f.server.URL)
+	f.client.Jar.SetCookies(base, []*http.Cookie{{Name: "session", Value: "pairing-browser-session", Path: "/"}})
+	id, _, _ := registerPairing(t, f)
+	path := "/pairing/" + id
+	post := func(origin, site, token, action string) int {
+		t.Helper()
+		form := url.Values{"csrf": {token}, "action": {action}}
+		req, err := http.NewRequest(http.MethodPost, f.server.URL+path, strings.NewReader(form.Encode()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Sec-Fetch-Site", site)
+		res, err := f.client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	for _, test := range []struct{ origin, site, csrf string }{
+		{"null", "same-origin", "pairing-browser-csrf"},
+		{"https://attacker.example", "cross-site", "pairing-browser-csrf"},
+		{"https://attacker.example", "same-origin", "pairing-browser-csrf"},
+		{f.server.URL, "cross-site", "pairing-browser-csrf"},
+		{f.server.URL, "same-origin", "wrong-csrf"},
+	} {
+		if code := post(test.origin, test.site, test.csrf, "approve"); code != http.StatusForbidden {
+			t.Fatalf("unsafe pairing POST accepted: %+v: %d", test, code)
+		}
+		pairing, err := f.store.AgentPairing(id)
+		if err != nil || pairing.State != "pending" {
+			t.Fatal("rejected approval changed pairing", pairing, err)
+		}
+	}
+	for _, action := range []string{"approve", "revoke"} {
+		res, err := f.client.Get(f.server.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, readErr := io.ReadAll(res.Body)
+		res.Body.Close()
+		// no-referrer makes native browser POSTs send Origin: null. Both the
+		// pending and approved pages must keep the app's same-origin policy.
+		if readErr != nil || res.StatusCode != http.StatusOK || res.Header.Get("Referrer-Policy") != "same-origin" {
+			t.Fatal("pairing form suppresses the browser Origin", res.StatusCode, res.Header, readErr)
+		}
+		if code := post(f.server.URL, "same-origin", csrf(t, string(body)), action); code != http.StatusSeeOther {
+			t.Fatalf("same-origin %s failed: %d", action, code)
+		}
+		pairing, err := f.store.AgentPairing(id)
+		want := "approved"
+		if action == "revoke" {
+			want = "revoked"
+		}
+		if err != nil || pairing.State != want {
+			t.Fatal("pairing action was not saved", pairing, err)
+		}
 	}
 }

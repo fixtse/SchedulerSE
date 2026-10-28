@@ -107,7 +107,6 @@ func (s *Server) pairingApproval(w http.ResponseWriter, r *http.Request, csrf st
 		state = "expired"
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.WriteHeader(status)
 	_ = pairingPage.Execute(w, struct{ Style, Callback, CSRF, State, Error string }{styleAsset.URL(), p.CallbackURL, csrf, state, message})
 }
