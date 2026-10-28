@@ -8,7 +8,8 @@ check:
 	go vet ./...
 test:
 	# Vet runs separately in the check target. Keep race detection and Go test caching.
-	go test -vet=off -race -timeout 60s ./...
+	# The timeout covers each whole package, including sequential production-cost bcrypt tests.
+	go test -vet=off -race -timeout 5m ./...
 build:
 	mkdir -p bin
 	CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o bin/schedulerse ./cmd/schedulerse

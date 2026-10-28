@@ -2,6 +2,7 @@
   "name": "SchedulerSE development",
   "image": "golang:1.27.3-bookworm",
   "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {},
     "ghcr.io/devcontainers/features/docker-in-docker:2": {}
   },
   "postCreateCommand": "go mod download",
