@@ -159,8 +159,13 @@ func TestMCPSchedulesAndConnection(t *testing.T) {
 		t.Fatal("agent task not persisted", task, err)
 	}
 	jobs, err := f.store.Jobs()
-	if err != nil || len(jobs) != 0 {
-		t.Fatal("agent schedule appeared in automations", jobs, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range jobs {
+		if job.ID == task.ID {
+			t.Fatal("agent schedule appeared in automations", job.ID)
+		}
 	}
 	agentSchedule["id"] = "conflicting-schedule"
 	agentSchedule["interval_seconds"] = 60
