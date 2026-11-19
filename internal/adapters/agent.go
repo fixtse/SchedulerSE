@@ -14,7 +14,7 @@ import (
 func migrateAgent(db *sql.DB) error {
 	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS agent_settings(id INTEGER PRIMARY KEY CHECK(id=1),token_hash TEXT NOT NULL DEFAULT '',webhook_url TEXT NOT NULL DEFAULT '',webhook_auth TEXT NOT NULL DEFAULT '',delivery_mode TEXT NOT NULL DEFAULT 'poll');
  INSERT OR IGNORE INTO agent_settings(id) VALUES(1);
- CREATE TABLE IF NOT EXISTS agent_tasks(id TEXT PRIMARY KEY,kind TEXT NOT NULL,title TEXT NOT NULL,message TEXT NOT NULL,context TEXT NOT NULL,run_at INTEGER NOT NULL,interval_seconds INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',http_status INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '');
+ CREATE TABLE IF NOT EXISTS agent_tasks(id TEXT PRIMARY KEY,kind TEXT NOT NULL,title TEXT NOT NULL,message TEXT NOT NULL,context TEXT NOT NULL,run_at INTEGER NOT NULL,interval_seconds INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',http_status INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '',archived_at INTEGER NOT NULL DEFAULT 0);
  CREATE INDEX IF NOT EXISTS agent_due ON agent_tasks(status,run_at);
  CREATE TABLE IF NOT EXISTS agent_pickups(task_id TEXT NOT NULL,run_at INTEGER NOT NULL,consumer_id TEXT NOT NULL,PRIMARY KEY(task_id,run_at));`)
 	if err != nil {
@@ -25,7 +25,16 @@ func migrateAgent(db *sql.DB) error {
 		return err
 	}
 	if hasMode == 0 {
-		_, err = db.Exec("ALTER TABLE agent_settings ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'webhook'")
+		if _, err = db.Exec("ALTER TABLE agent_settings ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'webhook'"); err != nil {
+			return err
+		}
+	}
+	var hasArchive int
+	if err = db.QueryRow("SELECT count(*) FROM pragma_table_info('agent_tasks') WHERE name='archived_at'").Scan(&hasArchive); err != nil {
+		return err
+	}
+	if hasArchive == 0 {
+		_, err = db.Exec("ALTER TABLE agent_tasks ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0")
 	}
 	return err
 }
