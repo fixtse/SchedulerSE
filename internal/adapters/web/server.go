@@ -92,6 +92,7 @@ type view struct {
 	AgentGuide                           string
 	Remember                             bool
 	AgentTasks                           []domain.AgentTask
+	ArchivedAgentTasks                   []domain.AgentTask
 	AgentSettings                        domain.AgentSettings
 	HasAgentToken, HasWebhookAuth        bool
 	NewAgentToken                        string
@@ -287,6 +288,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 	mux.HandleFunc("GET /agent", func(w http.ResponseWriter, r *http.Request) { s.agentPage(w, r, csrf, username) })
 	mux.HandleFunc("POST /agent/{id}/cancel", func(w http.ResponseWriter, r *http.Request) { s.cancelAgent(w, r, false) })
+	mux.HandleFunc("POST /agent/{id}/archive/{action}", func(w http.ResponseWriter, r *http.Request) {
+		switch r.PathValue("action") {
+		case "restore", "run":
+			s.requeueArchivedAgent(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
 	mux.HandleFunc("GET /settings/agent", func(w http.ResponseWriter, r *http.Request) { s.agentSettingsPage(w, r, csrf, username) })
 	mux.HandleFunc("POST /settings/agent", func(w http.ResponseWriter, r *http.Request) { s.saveAgentSettings(w, r, csrf, username) })
 	mux.HandleFunc("POST /settings/agent/token", func(w http.ResponseWriter, r *http.Request) { s.agentToken(w, r, csrf, username) })

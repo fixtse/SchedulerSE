@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/fixtse/SchedulerSE/internal/domain"
@@ -13,7 +14,7 @@ import (
 func migrateAgent(db *sql.DB) error {
 	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS agent_settings(id INTEGER PRIMARY KEY CHECK(id=1),token_hash TEXT NOT NULL DEFAULT '',webhook_url TEXT NOT NULL DEFAULT '',webhook_auth TEXT NOT NULL DEFAULT '',delivery_mode TEXT NOT NULL DEFAULT 'poll');
  INSERT OR IGNORE INTO agent_settings(id) VALUES(1);
- CREATE TABLE IF NOT EXISTS agent_tasks(id TEXT PRIMARY KEY,kind TEXT NOT NULL,title TEXT NOT NULL,message TEXT NOT NULL,context TEXT NOT NULL,run_at INTEGER NOT NULL,interval_seconds INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',http_status INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '');
+ CREATE TABLE IF NOT EXISTS agent_tasks(id TEXT PRIMARY KEY,kind TEXT NOT NULL,title TEXT NOT NULL,message TEXT NOT NULL,context TEXT NOT NULL,run_at INTEGER NOT NULL,interval_seconds INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',http_status INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '',archived_at INTEGER NOT NULL DEFAULT 0);
  CREATE INDEX IF NOT EXISTS agent_due ON agent_tasks(status,run_at);
  CREATE TABLE IF NOT EXISTS agent_pickups(task_id TEXT NOT NULL,run_at INTEGER NOT NULL,consumer_id TEXT NOT NULL,PRIMARY KEY(task_id,run_at));`)
 	if err != nil {
@@ -24,7 +25,16 @@ func migrateAgent(db *sql.DB) error {
 		return err
 	}
 	if hasMode == 0 {
-		_, err = db.Exec("ALTER TABLE agent_settings ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'webhook'")
+		if _, err = db.Exec("ALTER TABLE agent_settings ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'webhook'"); err != nil {
+			return err
+		}
+	}
+	var hasArchive int
+	if err = db.QueryRow("SELECT count(*) FROM pragma_table_info('agent_tasks') WHERE name='archived_at'").Scan(&hasArchive); err != nil {
+		return err
+	}
+	if hasArchive == 0 {
+		_, err = db.Exec("ALTER TABLE agent_tasks ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0")
 	}
 	return err
 }
@@ -61,16 +71,30 @@ func (s *Store) SetAgentToken(hash string) error {
 	return err
 }
 
-const agentColumns = `id,kind,title,message,context,run_at,interval_seconds,status,http_status,last_error`
+const agentColumns = `id,kind,title,message,context,run_at,interval_seconds,status,http_status,last_error,archived_at`
 
 func scanAgent(row interface{ Scan(...any) error }) (v domain.AgentTask, err error) {
 	var raw string
-	err = row.Scan(&v.ID, &v.Kind, &v.Title, &v.Message, &raw, &v.RunAt, &v.IntervalSeconds, &v.Status, &v.HTTPStatus, &v.LastError)
+	err = row.Scan(&v.ID, &v.Kind, &v.Title, &v.Message, &raw, &v.RunAt, &v.IntervalSeconds, &v.Status, &v.HTTPStatus, &v.LastError, &v.ArchivedAt)
 	v.Context = json.RawMessage(raw)
 	return
 }
 func (s *Store) AgentTasks() ([]domain.AgentTask, error) {
-	rows, err := s.DB.Query(`SELECT ` + agentColumns + ` FROM agent_tasks ORDER BY run_at DESC,id LIMIT 200`)
+	return s.listAgentTasks(`ORDER BY run_at DESC,id LIMIT 200`)
+}
+
+const agentArchiveRetention = 5 * 24 * time.Hour
+
+func (s *Store) ActiveAgentTasks() ([]domain.AgentTask, error) {
+	return s.listAgentTasks(`WHERE archived_at=0 ORDER BY run_at DESC,id LIMIT 200`)
+}
+
+func (s *Store) ArchivedAgentTasks() ([]domain.AgentTask, error) {
+	return s.listAgentTasks(`WHERE archived_at>? ORDER BY archived_at DESC,id`, time.Now().Add(-agentArchiveRetention).Unix())
+}
+
+func (s *Store) listAgentTasks(clause string, args ...any) ([]domain.AgentTask, error) {
+	rows, err := s.DB.Query(`SELECT `+agentColumns+` FROM agent_tasks `+clause, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -111,18 +135,55 @@ func (s *Store) CancelAgentTask(id string) (bool, error) {
 	return n == 1, err
 }
 
+// RequeueArchivedAgentTask gives a restored schedule a new occurrence ID.
+func (s *Store) RequeueArchivedAgentTask(id string, at time.Time) (bool, error) {
+	result, err := s.DB.Exec(`UPDATE agent_tasks SET status='pending',run_at=max(?,run_at+1),archived_at=0,http_status=0,last_error=''
+		WHERE id=? AND archived_at>?`, at.Unix(), id, time.Now().Add(-agentArchiveRetention).Unix())
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+
+func (s *Store) pruneAgentArchive(now time.Time) error {
+	cutoff := now.Add(-agentArchiveRetention).Unix()
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`DELETE FROM agent_pickups WHERE task_id IN (SELECT id FROM agent_tasks WHERE archived_at>0 AND archived_at<=?)`, cutoff); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM agent_tasks WHERE archived_at>0 AND archived_at<=?`, cutoff); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // ServeAgent delivers one callback per occurrence. A durable claim precedes network I/O;
 // uncertain deliveries are never replayed after a crash or transport failure.
 func (s *Store) ServeAgent(ctx context.Context, h *HTTP) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	cleanup := time.NewTicker(time.Minute)
+	defer cleanup.Stop()
+	prune := func() {
+		if err := s.pruneAgentArchive(time.Now()); err != nil {
+			log.Printf("clean agent schedule archive: %v", err)
+		}
+	}
+	prune()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			s.deliverAgent(ctx, h)
+		case <-cleanup.C:
+			prune()
 		}
-		s.deliverAgent(ctx, h)
 	}
 }
 
@@ -160,8 +221,12 @@ func (s *Store) deliverAgent(ctx context.Context, h *HTTP) {
 		status = "pending"
 		next = v.RunAt + ((time.Now().Unix()-v.RunAt)/v.IntervalSeconds+1)*v.IntervalSeconds
 	}
+	var archivedAt int64
+	if status == "delivered" {
+		archivedAt = time.Now().Unix()
+	}
 	// If this write fails, leave the durable claim for startup recovery.
-	_, _ = s.DB.Exec(`UPDATE agent_tasks SET status=?,run_at=?,http_status=?,last_error=? WHERE id=? AND status='delivering'`, status, next, response.HTTPStatus, code, v.ID)
+	_, _ = s.DB.Exec(`UPDATE agent_tasks SET status=?,run_at=?,http_status=?,last_error=?,archived_at=? WHERE id=? AND status='delivering'`, status, next, response.HTTPStatus, code, archivedAt, v.ID)
 }
 
 func (s *Store) AgentInbox(conversation string) ([]domain.AgentEvent, error) {
@@ -213,7 +278,9 @@ func (s *Store) PickupAgentTask(id string, at int64, consumer string) (bool, err
 		return false, err
 	}
 	status, next := "delivered", task.RunAt
+	archivedAt := time.Now().Unix()
 	if task.IntervalSeconds > 0 {
+		archivedAt = 0
 		status = "pending"
 		next = task.RunAt + ((time.Now().Unix()-task.RunAt)/task.IntervalSeconds+1)*task.IntervalSeconds
 	}
@@ -227,7 +294,7 @@ func (s *Store) PickupAgentTask(id string, at int64, consumer string) (bool, err
 	if _, err = tx.Exec(`INSERT INTO agent_pickups(task_id,run_at,consumer_id) VALUES(?,?,?)`, id, at, consumer); err != nil {
 		return false, err
 	}
-	if _, err = tx.Exec(`UPDATE agent_tasks SET status=?,run_at=?,http_status=0,last_error='' WHERE id=?`, status, next, id); err != nil {
+	if _, err = tx.Exec(`UPDATE agent_tasks SET status=?,run_at=?,http_status=0,last_error='',archived_at=? WHERE id=?`, status, next, archivedAt, id); err != nil {
 		return false, err
 	}
 	if err = tx.Commit(); err != nil {

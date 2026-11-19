@@ -238,7 +238,7 @@
             <div>
                 <p class="eyebrow">TIMERS / REMINDERS / TASKS</p>
                 <h1>Agent schedules<span class="accent">.</span></h1>
-                <p class="muted">Schedules created through the agent API. Latest 200 items · all times UTC.</p>
+                <p class="muted">Schedules created through the agent API. Latest 200 active items · all times UTC.</p>
             </div><a class="primary" href="/settings?tab=agent">Connect an agent →</a>
         </div>
         <div class="jobs">{{range .AgentTasks}}<article class="job-card">
@@ -267,6 +267,26 @@
                 <h3>No agent schedules yet</h3>
                 <p>Connect your agent through MCP in Agent API settings, then ask it to create a reminder.</p>
             </div>{{end}}</div>
+        <section id="agent-archive" aria-labelledby="agent-archive-title">
+            <div class="page-heading"><div>
+                <h2 id="agent-archive-title">Archive</h2>
+                <p class="muted">Delivered one-time schedules are kept for five days. Run now queues immediate delivery through your agent connection.</p>
+            </div></div>
+            <div class="jobs">{{range .ArchivedAgentTasks}}<article class="job-card">
+                <div class="card-top"><span>{{.Kind}}</span><span class="badge">Archived</span></div>
+                <h3>{{.Title}}</h3>
+                <p>{{.Message}}</p>
+                <dl class="job-meta"><dt>Reference</dt><dd>{{.ID}}</dd>
+                    <dt>Scheduled time (UTC)</dt><dd>{{.DueUTC}}</dd>
+                </dl>
+                <form hx-boost="false" method="post" action="/agent/{{.ID}}/archive/restore">
+                    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                    <label>Run again in seconds <input type="number" name="after_seconds" min="1" max="31536000" value="60" required></label>
+                    <button class="text-button">Restore schedule</button>
+                    <button class="text-button" formaction="/agent/{{.ID}}/archive/run" formnovalidate>Run now</button>
+                </form>
+            </article>{{else}}<p class="muted">No archived schedules.</p>{{end}}</div>
+        </section>
         {{else if eq .Page "agent-settings"}}
         {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
         {{if .Notice}}<div class="notice" role="status">{{.Notice}}</div>{{end}}

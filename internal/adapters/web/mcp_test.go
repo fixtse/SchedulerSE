@@ -99,7 +99,7 @@ func TestMCPTransportDiscoveryAndAuthorization(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"create_timer", "create_reminder", "list_schedules", "get_schedule", "cancel_schedule", "create_automation", "list_automations", "get_automation", "run_automation", "list_runs", "get_connection", "configure_connection", "get_guide", "get_delivery_file"} {
+	for _, name := range []string{"create_timer", "create_reminder", "create_agent_schedule", "list_schedules", "get_schedule", "cancel_schedule", "create_automation", "list_automations", "get_automation", "run_automation", "list_runs", "get_connection", "configure_connection", "get_guide", "get_delivery_file"} {
 		if !names[name] {
 			t.Error("missing MCP tool", name)
 		}
@@ -149,6 +149,28 @@ func TestMCPSchedulesAndConnection(t *testing.T) {
 	}
 	if result = callMCP(t, f, "create_reminder", map[string]any{"id": "report-reminder", "title": "Report", "run_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339), "context": map[string]any{"conversation_id": "conversation-1"}}); result.IsError {
 		t.Fatal(result.Content)
+	}
+	agentSchedule := map[string]any{"id": "report-follow-up", "title": "Follow up on report", "after_seconds": 60, "one_time": true, "context": map[string]any{"conversation_id": "conversation-1"}}
+	if result = callMCP(t, f, "create_agent_schedule", agentSchedule); result.IsError {
+		t.Fatal(result.Content)
+	}
+	task, err := f.store.AgentTask("report-follow-up")
+	if err != nil || task.Kind != "task" || task.IntervalSeconds != 0 {
+		t.Fatal("agent task not persisted", task, err)
+	}
+	jobs, err := f.store.Jobs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range jobs {
+		if job.ID == task.ID {
+			t.Fatal("agent schedule appeared in automations", job.ID)
+		}
+	}
+	agentSchedule["id"] = "conflicting-schedule"
+	agentSchedule["interval_seconds"] = 60
+	if result = callMCP(t, f, "create_agent_schedule", agentSchedule); !result.IsError {
+		t.Fatal("one-time schedule accepted a recurrence")
 	}
 	for _, tool := range []string{"list_schedules", "get_connection", "get_guide"} {
 		if result = callMCP(t, f, tool, map[string]any{}); result.IsError {
@@ -280,7 +302,7 @@ func TestMCPOfficialClientInteroperability(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, &mcp.ListToolsParams{})
-	if err != nil || len(tools.Tools) != 14 {
+	if err != nil || len(tools.Tools) != 15 {
 		t.Fatalf("discovery: %+v, %v", tools, err)
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_connection", Arguments: map[string]any{}})

@@ -14,6 +14,7 @@ type AgentTask struct {
 	Context         json.RawMessage `json:"context"`
 	RunAt           int64           `json:"run_at_unix"`
 	IntervalSeconds int64           `json:"interval_seconds"`
+	ArchivedAt      int64           `json:"archived_at_unix,omitempty"`
 	Status          string          `json:"status"`
 	HTTPStatus      int             `json:"http_status"`
 	LastError       string          `json:"last_error"`
