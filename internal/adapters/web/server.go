@@ -316,6 +316,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.HandleFunc("GET /jobs/{id}", func(w http.ResponseWriter, r *http.Request) { s.jobPage(w, r, csrf, false) })
 	mux.HandleFunc("POST /jobs/{id}", func(w http.ResponseWriter, r *http.Request) { s.saveJob(w, r, csrf, false) })
 	mux.HandleFunc("POST /jobs/{id}/run", s.runJob)
+	mux.HandleFunc("GET /jobs/{id}/delete", func(w http.ResponseWriter, r *http.Request) { s.confirmDeleteJob(w, r, csrf) })
+	mux.HandleFunc("POST /jobs/{id}/delete", s.deleteJob)
 	mux.HandleFunc("POST /jobs/{id}/toggle", func(w http.ResponseWriter, r *http.Request) {
 		j, err := s.Store.Job(r.PathValue("id"))
 		if err != nil {
@@ -702,6 +704,39 @@ func (s *Server) renderJob(w http.ResponseWriter, status int, csrf string, j dom
 	hasFallback := j.FallbackAuth != ""
 	j.Authorization, j.FallbackAuth = "", ""
 	render(w, status, view{Page: "job", Title: "Edit automation", CSRF: csrf, Job: j, New: create, HasAuthorization: has, HasFallbackAuth: hasFallback, Timezone: zone, Schedule: schedule, Timezones: timezoneChoices(zone, s.settings().Timezone), Weekdays: weekdayChoices(schedule.Days), Error: message, RunToken: rand.Text(), DefaultTimeoutMS: s.defaultTimeout().Milliseconds(), BashEnabled: s.Config.EnableBash})
+}
+
+func (s *Server) confirmDeleteJob(w http.ResponseWriter, r *http.Request, csrf string) {
+	job, err := s.Store.Job(r.PathValue("id"))
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Could not load automation", http.StatusServiceUnavailable)
+		return
+	}
+	render(w, http.StatusOK, view{Page: "delete-job", Title: "Delete automation", CSRF: csrf,
+		Job: domain.Job{ID: job.ID, Name: job.Name, Revision: job.Revision}})
+}
+
+func (s *Server) deleteJob(w http.ResponseWriter, r *http.Request) {
+	revision, err := strconv.ParseInt(r.PostFormValue("revision"), 10, 64)
+	if err != nil || revision < 1 {
+		http.Error(w, "Invalid revision. Reload before deleting the automation.", http.StatusBadRequest)
+		return
+	}
+	err = s.Store.DeleteJob(r.PathValue("id"), revision)
+	if errors.Is(err, adapters.ErrConflict) {
+		http.Error(w, "Automation changed or was deleted. Reload before trying again.", http.StatusConflict)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Could not delete automation", http.StatusServiceUnavailable)
+		return
+	}
+	s.Reload()
+	redirect(w, r, "/")
 }
 
 var runTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{26,128}$`)

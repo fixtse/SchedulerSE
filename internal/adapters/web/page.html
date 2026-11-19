@@ -132,6 +132,7 @@
                         .Enabled}}data-confirm-disable{{end}}><input type="hidden" name="csrf" value="{{$.CSRF}}"><input
                             type="hidden" name="revision" value="{{.Revision}}"><button class="text-button">{{if
                             .Enabled}}Disable{{else}}Enable{{end}}</button></form>{{end}}
+                    <a href="/jobs/{{.ID}}/delete">Delete</a>
                 </div>
             </article>{{end}}</div>
         <div class="section-label history-heading" id="activity">
@@ -576,6 +577,17 @@
                     automatic retries.</p>
             </aside>
         </div>
+        {{else if eq .Page "delete-job"}}
+        <section class="panel stack">
+            <h1>Delete {{.Job.Name}}?</h1>
+            <p class="muted">This removes the automation and stops future runs. Any run already in progress can finish, and its history stays in Recent activity.</p>
+            <form hx-boost="false" method="post" action="/jobs/{{.Job.ID}}/delete" class="dialog-actions">
+                <input type="hidden" name="csrf" value="{{.CSRF}}">
+                <input type="hidden" name="revision" value="{{.Job.Revision}}">
+                <a class="cancel" href="/">Cancel</a>
+                <button class="primary">Delete automation</button>
+            </form>
+        </section>
         {{else if eq .Page "job"}}
         <a class="back" href="/">← All automations</a>
         <div class="page-heading">

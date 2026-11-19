@@ -482,3 +482,51 @@ func TestManualBashAutomationOmitsSchedulingControls(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteAutomationPreservesRunHistoryAndRejectsStaleForms(t *testing.T) {
+	f := fixture(t)
+	token := f.setup(t)
+	job, err := f.store.Job("youtube-incremental")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const slot = "manual:delete-test"
+	if started, err := f.store.Begin(job, slot); err != nil || !started {
+		t.Fatal("could not start run", started, err)
+	}
+	path := "/jobs/" + job.ID + "/delete"
+	code, body := f.get(t, path)
+	if code != http.StatusOK || !strings.Contains(body, "Delete "+job.Name+"?") || strings.Contains(body, job.Authorization) {
+		t.Fatal("unexpected delete confirmation", code)
+	}
+
+	form := url.Values{"revision": {strconv.FormatInt(job.Revision, 10)}}
+	if code, _, _ := f.post(t, path, form); code != http.StatusForbidden {
+		t.Fatal("delete accepted without CSRF", code)
+	}
+	form.Set("csrf", token)
+	if code, _, _ := f.post(t, path, form); code != http.StatusSeeOther {
+		t.Fatal("delete failed", code)
+	}
+	jobs, err := f.store.Jobs()
+	if err != nil || len(jobs) != 0 || f.reloads != 1 {
+		t.Fatal("automation was not removed from the scheduler", len(jobs), f.reloads, err)
+	}
+	if err := f.store.Finish(job.ID, slot, domain.Outcome{Status: "success"}); err != nil {
+		t.Fatal("in-flight run could not finish", err)
+	}
+	runs, err := f.store.Recent()
+	if err != nil || len(runs) != 1 || runs[0].Status != "success" {
+		t.Fatal("run history lost", runs, err)
+	}
+
+	if err := f.store.Save(job, true); err != nil {
+		t.Fatal("could not reuse deleted ID", err)
+	}
+	if code, _, _ := f.post(t, path, form); code != http.StatusConflict {
+		t.Fatal("stale form could delete a recreated automation", code)
+	}
+	if started, err := f.store.Begin(job, "manual:stale-job"); err != nil || started {
+		t.Fatal("stale revision could run a recreated automation", started, err)
+	}
+}

@@ -31,6 +31,7 @@ func OpenStore(dir string) (*Store, error) {
  notification TEXT NOT NULL DEFAULT 'none',started TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,finished TEXT,PRIMARY KEY(job,slot));
  CREATE UNIQUE INDEX IF NOT EXISTS running_job ON runs(job) WHERE status='running';
  CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,name TEXT NOT NULL,url TEXT NOT NULL,authorization TEXT NOT NULL,body TEXT NOT NULL,cron TEXT NOT NULL,enabled INTEGER NOT NULL,policy TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1);
+ CREATE TABLE IF NOT EXISTS deleted_job_revisions(id TEXT PRIMARY KEY,revision INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS account(id INTEGER PRIMARY KEY CHECK(id=1),username TEXT NOT NULL,password BLOB NOT NULL);
  CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,csrf TEXT NOT NULL,expires INTEGER NOT NULL);
@@ -183,6 +184,27 @@ var ErrCapacity = errors.New("storage quota reached; administrator maintenance r
 
 var ErrConflict = errors.New("job changed in another session; reload before saving")
 
+// DeleteJob removes the configuration while retaining run history and the
+// revision needed to reject stale requests if the ID is created again.
+func (s *Store) DeleteJob(id string, revision int64) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	err = tx.QueryRow(`DELETE FROM jobs WHERE id=? AND revision=? RETURNING revision`, id, revision).Scan(&revision)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrConflict
+	}
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`INSERT INTO deleted_job_revisions(id,revision) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision`, id, revision); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Store) Save(j domain.Job, create bool) error {
 	tx, err := s.DB.Begin()
 	if err != nil {
@@ -190,7 +212,7 @@ func (s *Store) Save(j domain.Job, create bool) error {
 	}
 	defer tx.Rollback()
 	if create {
-		result, err := tx.Exec(`INSERT INTO jobs(id,name,url,authorization,body,cron,enabled,policy,timezone,request_timeout_ms,retry_count,retry_delay_ms,retry_uncertain,fallback_url,fallback_authorization,kind,script) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM jobs)<1000`, j.ID, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Policy, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth, j.Kind, j.Script)
+		result, err := tx.Exec(`INSERT INTO jobs(id,name,url,authorization,body,cron,enabled,policy,timezone,request_timeout_ms,retry_count,retry_delay_ms,retry_uncertain,fallback_url,fallback_authorization,kind,script,revision) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE((SELECT revision+1 FROM deleted_job_revisions WHERE id=?),1) WHERE (SELECT count(*) FROM jobs)<1000`, j.ID, j.Name, j.URL, j.Authorization, string(j.Body), j.Cron, j.Enabled, j.Policy, j.Timezone, j.TimeoutMS, j.RetryCount, j.RetryDelayMS, j.RetryUncertain, j.FallbackURL, j.FallbackAuth, j.Kind, j.Script, j.ID)
 		if err != nil {
 			return err
 		}
