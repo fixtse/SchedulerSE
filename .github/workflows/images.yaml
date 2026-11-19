@@ -99,7 +99,8 @@ jobs:
           labels: ${{ steps.metadata.outputs.labels }}
           cache-from: type=gha,scope=runtime-amd64
           cache-to: type=gha,scope=runtime-amd64,mode=max
-          provenance: mode=min
+          # The PR Docker exporter loads a single image into the runner.
+          provenance: ${{ github.event_name == 'pull_request' && 'false' || 'mode=min' }}
       - name: Smoke test the production image with isolated mock services
         env:
           IMAGE: ${{ steps.coordinates.outputs.image }}:sha-${{ github.sha }}
