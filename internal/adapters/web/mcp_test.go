@@ -82,6 +82,23 @@ func TestMCPTransportDiscoveryAndAuthorization(t *testing.T) {
 		t.Fatal("discovery failed", response.Body.String())
 	}
 	names := map[string]bool{}
+	agentSchedule := map[string]any{"id": "report-follow-up", "title": "Follow up on report", "after_seconds": 60, "one_time": true, "context": map[string]any{"conversation_id": "conversation-1"}}
+	if result = callMCP(t, f, "create_agent_schedule", agentSchedule); result.IsError {
+		t.Fatal(result.Content)
+	}
+	task, err := f.store.AgentTask("report-follow-up")
+	if err != nil || task.Kind != "task" || task.IntervalSeconds != 0 {
+		t.Fatal("agent task not persisted", task, err)
+	}
+	jobs, err := f.store.Jobs()
+	if err != nil || len(jobs) != 0 {
+		t.Fatal("agent schedule appeared in automations", jobs, err)
+	}
+	agentSchedule["id"] = "conflicting-schedule"
+	agentSchedule["interval_seconds"] = 60
+	if result = callMCP(t, f, "create_agent_schedule", agentSchedule); !result.IsError {
+		t.Fatal("one-time schedule accepted a recurrence")
+	}
 	for _, tool := range envelope.Result.Tools {
 		names[tool.Name] = true
 		if tool.Name == "create_timer" {
@@ -99,7 +116,7 @@ func TestMCPTransportDiscoveryAndAuthorization(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"create_timer", "create_reminder", "list_schedules", "get_schedule", "cancel_schedule", "create_automation", "list_automations", "get_automation", "run_automation", "list_runs", "get_connection", "configure_connection", "get_guide", "get_delivery_file"} {
+	for _, name := range []string{"create_timer", "create_reminder", "create_agent_schedule", "list_schedules", "get_schedule", "cancel_schedule", "create_automation", "list_automations", "get_automation", "run_automation", "list_runs", "get_connection", "configure_connection", "get_guide", "get_delivery_file"} {
 		if !names[name] {
 			t.Error("missing MCP tool", name)
 		}

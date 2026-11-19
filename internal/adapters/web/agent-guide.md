@@ -40,6 +40,7 @@ Available tools:
 
 - `create_timer`: title, stable ID, `after_seconds`, routing `context`, optional recurrence.
 - `create_reminder`: title, stable ID, exactly one of `run_at` or `after_seconds`, routing `context`, optional recurrence.
+- `create_agent_schedule`: queue future agent work or a conversation follow-up using the same timing and routing inputs as `create_reminder`. It appears under **Agent schedules**.
 - `list_schedules`, `get_schedule`, `cancel_schedule`: inspect and cancel agent reminders.
 - `create_automation`: save HTTP POST or Bash work with optional cron, timezone and enabled scheduling.
 - `list_automations`, `get_automation`: inspect saved tasks and their revisions.
@@ -48,6 +49,12 @@ Available tools:
 - `get_connection`, `configure_connection`: inspect or configure shared reminder delivery.
 - `get_guide`: read this setup and API reference.
 - `get_delivery_file`: read bridge source, connection metadata and delivery guides through MCP.
+
+Set `one_time: true` on any schedule creation tool to request a single occurrence.
+Omit `interval_seconds` or set it to zero. All single-occurrence schedules move to
+**Agent schedules → Archive** after webhook delivery succeeds or the poll consumer
+acknowledges pickup. The archive keeps them for five days after delivery. Use
+**Restore schedule** to choose a new delay or **Run now** to queue immediate delivery.
 
 Tool schemas describe their inputs. Successful tools return structured data under
 `result`, except cancellation (`status: cancelled`) and `get_guide` / `get_delivery_file` (text).

@@ -60,6 +60,9 @@ func TestAgentDeliveryAndRecurrence(t *testing.T) {
 			if err != nil || saved.Status != tc.want || saved.HTTPStatus != tc.status {
 				t.Fatalf("saved=%+v error=%v", saved, err)
 			}
+			if (saved.ArchivedAt > 0) != (tc.want == "delivered") {
+				t.Fatalf("wrong archive state: %+v", saved)
+			}
 			if tc.want == "pending" && (saved.RunAt <= time.Now().Unix() || (saved.RunAt-task.RunAt)%tc.interval != 0) {
 				t.Fatal("recurrence did not skip missed slots")
 			}
@@ -223,5 +226,56 @@ func TestAgentModeMigrationPreservesWebhookConnections(t *testing.T) {
 	settings, err := store.AgentSettings()
 	if err != nil || settings.DeliveryMode != "webhook" || settings.WebhookURL != "https://example.com/hook" || settings.TokenHash != "saved-hash" || settings.WebhookAuth != "Bearer saved-header" {
 		t.Fatalf("migration changed connection: %+v %v", settings, err)
+	}
+}
+
+func TestAgentArchiveRestoreAndExpiry(t *testing.T) {
+	store := testStore(t)
+	now := time.Now()
+	task := domain.AgentTask{ID: "replay", Kind: "task", Title: "Follow up", Context: json.RawMessage(`{"conversation_id":"local"}`), RunAt: now.Unix() - 1}
+	if err := store.CreateAgentTask(task); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := store.PickupAgentTask(task.ID, task.RunAt, "consumer"); err != nil || !ok {
+		t.Fatal("initial pickup failed", err)
+	}
+	if items, err := store.ActiveAgentTasks(); err != nil || len(items) != 0 {
+		t.Fatal("delivered schedule remained active", items, err)
+	}
+	if items, err := store.ArchivedAgentTasks(); err != nil || len(items) != 1 || items[0].ArchivedAt < now.Unix() {
+		t.Fatal("schedule missing from archive", items, err)
+	}
+	if ok, err := store.RequeueArchivedAgentTask(task.ID, now); err != nil || !ok {
+		t.Fatal("requeue failed", err)
+	}
+	if ok, err := store.RequeueArchivedAgentTask(task.ID, now); err != nil || ok {
+		t.Fatal("duplicate requeue", ok, err)
+	}
+	saved, err := store.AgentTask(task.ID)
+	if err != nil || saved.Status != "pending" || saved.Event().EventID == task.Event().EventID {
+		t.Fatal("requeued occurrence is invalid", saved, err)
+	}
+	if ok, err := store.PickupAgentTask(task.ID, saved.RunAt, "consumer"); err != nil || !ok {
+		t.Fatal("pickup after requeue failed", err)
+	}
+	saved, err = store.AgentTask(task.ID)
+	if err != nil || saved.ArchivedAt == 0 {
+		t.Fatal("replayed schedule did not archive", saved, err)
+	}
+	expires := time.Unix(saved.ArchivedAt, 0).Add(agentArchiveRetention)
+	if err := store.pruneAgentArchive(expires.Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AgentTask(task.ID); err != nil {
+		t.Fatal("archive removed too early", err)
+	}
+	if err := store.pruneAgentArchive(expires); err != nil {
+		t.Fatal(err)
+	}
+	if items, err := store.AgentTasks(); err != nil || len(items) != 0 {
+		t.Fatal("expired schedule was not removed", items, err)
+	}
+	if ok, err := store.PickupAgentTask(task.ID, task.RunAt, "consumer"); err != nil || ok {
+		t.Fatal("expired receipt was not removed", ok, err)
 	}
 }

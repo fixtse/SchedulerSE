@@ -112,6 +112,7 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 		Context         json.RawMessage `json:"context"`
 		RunAt           string          `json:"run_at"`
 		AfterSeconds    int64           `json:"after_seconds"`
+		OneTime         bool            `json:"one_time"`
 		IntervalSeconds int64           `json:"interval_seconds"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
@@ -127,6 +128,10 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if (input.RunAt == "") == (input.AfterSeconds == 0) || input.AfterSeconds < 0 || input.AfterSeconds > 31536000 || input.IntervalSeconds < 0 || (input.IntervalSeconds > 0 && input.IntervalSeconds < 60) || input.IntervalSeconds > 31536000 {
 		agentError(w, 400, "Provide exactly one of run_at or after_seconds (1–31536000); interval_seconds must be 0 or 60–31536000")
+		return
+	}
+	if input.OneTime && input.IntervalSeconds != 0 {
+		agentError(w, 400, "one_time requires interval_seconds to be omitted or zero")
 		return
 	}
 	now := time.Now()
@@ -208,13 +213,40 @@ func (s *Server) cancelAgent(w http.ResponseWriter, r *http.Request, api bool) {
 	}
 }
 func (s *Server) agentPage(w http.ResponseWriter, r *http.Request, csrf, user string) {
-	tasks, err := s.Store.AgentTasks()
+	tasks, err := s.Store.ActiveAgentTasks()
 	if err != nil {
 		http.Error(w, "Schedule storage unavailable", 503)
 		return
 	}
-	render(w, 200, view{Page: "agent", Title: "Agent schedules", CSRF: csrf, Username: user, AgentTasks: tasks})
+	archive, err := s.Store.ArchivedAgentTasks()
+	if err != nil {
+		http.Error(w, "Schedule archive unavailable", 503)
+		return
+	}
+	render(w, 200, view{Page: "agent", Title: "Agent schedules", CSRF: csrf, Username: user, AgentTasks: tasks, ArchivedAgentTasks: archive})
 }
+func (s *Server) requeueArchivedAgent(w http.ResponseWriter, r *http.Request) {
+	at := time.Now()
+	if r.PathValue("action") == "restore" {
+		delay, err := strconv.ParseInt(r.PostFormValue("after_seconds"), 10, 64)
+		if err != nil || delay < 1 || delay > 31536000 {
+			http.Error(w, "Enter a delay of 1–31536000 seconds", 400)
+			return
+		}
+		at = at.Add(time.Duration(delay) * time.Second)
+	}
+	ok, err := s.Store.RequeueArchivedAgentTask(r.PathValue("id"), at)
+	if err != nil {
+		http.Error(w, "Could not requeue schedule", 503)
+		return
+	}
+	if !ok {
+		http.Error(w, "Schedule is no longer in the archive", 409)
+		return
+	}
+	redirect(w, r, "/agent")
+}
+
 func (s *Server) agentSettingsPage(w http.ResponseWriter, r *http.Request, csrf, user string) {
 	s.renderAgentSettings(w, r, 200, csrf, user, "", "", "")
 }
