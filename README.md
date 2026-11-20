@@ -180,7 +180,12 @@ Give tokens only to trusted agents; HTTP automations can reach the service netwo
    can read setup guides and fetch bridge files directly through MCP.
    A standalone **delivery kit** is also available for manual installation.
 
-MCP exposes `create_timer`, `create_reminder`, `list_schedules`, `get_schedule`,
+Use `create_agent_schedule` for a specific future agent task or conversation
+follow-up. One-time schedules move to the archive after delivery. Use
+`create_automation` for a persistent HTTP POST or Bash job that stays available
+for manual or cron-triggered runs.
+
+MCP exposes `create_agent_schedule`, `create_timer`, `create_reminder`, `list_schedules`, `get_schedule`,
 `cancel_schedule`, `create_automation`, `list_automations`, `get_automation`,
 `run_automation`, `list_runs`, `get_connection`, `configure_connection`, `get_guide`
 and `get_delivery_file`.

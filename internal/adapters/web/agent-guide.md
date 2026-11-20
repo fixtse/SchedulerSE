@@ -40,9 +40,9 @@ Available tools:
 
 - `create_timer`: title, stable ID, `after_seconds`, routing `context`, optional recurrence.
 - `create_reminder`: title, stable ID, exactly one of `run_at` or `after_seconds`, routing `context`, optional recurrence.
-- `create_agent_schedule`: queue future agent work or a conversation follow-up using the same timing and routing inputs as `create_reminder`. It appears under **Agent schedules**.
+- `create_agent_schedule`: queue a specific future task, follow-up, or conversation resumption under **Agent schedules**. Default to one occurrence and use recurrence when the user asks for repeated agent delivery.
 - `list_schedules`, `get_schedule`, `cancel_schedule`: inspect and cancel agent reminders.
-- `create_automation`: save HTTP POST or Bash work with optional cron, timezone and enabled scheduling.
+- `create_automation`: save a persistent, reusable HTTP POST or Bash job under **Automations**. It remains saved after each run and supports manual execution or cron.
 - `list_automations`, `get_automation`: inspect saved tasks and their revisions.
 - `run_automation`: start a saved revision using a stable random `run_token`.
 - `list_runs`: inspect 25 execution records per page; match `slot` to the accepted run.

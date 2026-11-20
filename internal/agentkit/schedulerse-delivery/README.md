@@ -68,8 +68,10 @@ Keep generated secrets and bridge state outside the extracted kit.
 
 ## Schedule and manage
 
-Prefer `create_timer`, `create_reminder`, `list_schedules`, `get_schedule` and
-`cancel_schedule` through MCP. Use `get_connection` / `configure_connection` for
+Use `create_agent_schedule` for a specific future agent task, follow-up, or conversation
+resumption. Default to `one_time: true` so it archives after delivery. Use
+`create_timer` and `create_reminder` for timers and reminders, and
+`list_schedules`, `get_schedule` and `cancel_schedule` to manage them through MCP. Use `get_connection` / `configure_connection` for
 delivery configuration. The bridge continues using REST pickup and acknowledgement.
 Use the installation's guide for REST fallback rather than guessing routes. Choose
 a stable unique ID before creating; after an uncertain create, inspect that ID before retrying.
@@ -109,7 +111,8 @@ means the receiver accepted the event, not that the AI finished the task.
 
 ## Create and run automations
 
-Prefer MCP `create_automation`, `list_automations`, `get_automation` and
+Use `create_automation` to save a persistent HTTP POST or Bash job that stays
+available after execution. Manage saved jobs with `list_automations`, `get_automation` and
 `run_automation`. Inspect completion through `list_runs`, matching the returned
 slot. Use `get_guide` for validation and recovery details. For REST fallback, POST
 `/automations`, GET the saved task and POST `/automations/{id}/run`. Use a stable random
