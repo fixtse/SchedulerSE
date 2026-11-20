@@ -57,7 +57,9 @@ Omit `interval_seconds` or set it to zero. Single-occurrence schedules move to
 acknowledges pickup. For monitored jobs this applies to the final event. The archive keeps them for five days after delivery. Use
 **Restore schedule** to choose a new delay or **Run now** to queue immediate delivery.
 
-For a long-running job, create one task with `check_interval_seconds`. Set
+Before launching a long-running job, call `create_agent_schedule` with
+`check_interval_seconds` using the existing delivery connection. If creation
+fails, report the error before launching. Set
 `run_at` or `after_seconds` to choose the first check, or omit both to check
 after one interval. Each `schedule.due` event with `phase: "check"` asks the
 agent to inspect progress. An ongoing job stays active and checks continue;
