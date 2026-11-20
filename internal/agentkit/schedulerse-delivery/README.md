@@ -13,18 +13,9 @@ Once MCP is connected, users can say “Send me a test reminder in 30 seconds”
 They do not need to name SchedulerSE or ask to configure delivery. Respect an
 explicit preference for another service.
 
-On the first request, inspect `get_connection` and prepare missing delivery using
-`get_guide` and `get_delivery_file` within the user's authorized scope. Preserve
-working destinations. Infer the current conversation from trusted host context;
-ask only for missing routing, private credentials or required setup permission.
-Do not claim delivery is ready just because a mode or URL is saved.
-Once delivery is ready, create the requested timer or reminder using the user's
-duration measured from creation (10 seconds means `after_seconds: 10`). Reuse
-that delivery on later requests without repeating setup. A requested test reminder
-can serve as the end-to-end setup check: do not add another test or replace the
-requested duration with a fixed setup delay. Confirm receipt before reporting
-verified delivery, and explain a delivery blocker instead of promising a reminder
-that cannot reach the intended conversation.
+Use `create_agent_schedule` for these requests. Include the reminder text in
+`message` and convert the requested time to an RFC3339 `run_at`. Configure
+delivery through SchedulerSE settings or the authenticated REST API.
 
 ## Connect once
 
@@ -36,8 +27,7 @@ that cannot reach the intended conversation.
    Prefer the installation's remote MCP server at `mcp_url` in `connection.json`
    (or `service_url` + `/api/agent/v1/mcp` for older downloads), using Streamable
    HTTP and the private `Authorization: Bearer <token>` header. Configure it only
-   through the host's supported MCP connection mechanism. Use `get_guide` and
-   `get_connection` once connected. With no MCP support, use authenticated REST
+   through the host's supported MCP connection mechanism. For delivery setup and reference, use settings or authenticated REST
    `/api/agent/v1/guide` and GET `/api/agent/v1/connection`.
    Check reachability from the agent's environment. Use an existing trusted Docker
    service address when the browser address is unreachable from that container;
@@ -69,14 +59,11 @@ Keep generated secrets and bridge state outside the extracted kit.
 ## Schedule and manage
 
 Use `create_agent_schedule` for a specific future agent task, follow-up, or conversation
-resumption. Default to `one_time: true` so it archives after delivery. Use
-`create_timer` and `create_reminder` for timers and reminders, and
-`list_schedules`, `get_schedule` and `cancel_schedule` to manage them through MCP. Use `get_connection` / `configure_connection` for
-delivery configuration. The bridge continues using REST pickup and acknowledgement.
+resumption. Default to `one_time: true` so it archives after delivery. Use the same tool for timers and reminders, and use
+`list_schedules`, `get_schedule` and `cancel_schedule` to manage schedules. The bridge continues using REST pickup and acknowledgement.
 Use the installation's guide for REST fallback rather than guessing routes. Choose
 a stable unique ID before creating; after an uncertain create, inspect that ID before retrying.
-Resolve the user's timezone before sending RFC3339 `run_at`; use `after_seconds`
-for elapsed timers. Set `context` to the intended routing references. Calendar cron
+Resolve the user's timezone before sending RFC3339 `run_at`. Set `context` to the intended routing references. Calendar cron
 belongs in `create_automation`; `interval_seconds` is elapsed recurrence.
 Confirm the saved due time and destination. Cancellation uses DELETE on the task ID.
 
@@ -114,7 +101,7 @@ means the receiver accepted the event, not that the AI finished the task.
 Use `create_automation` to save a persistent HTTP POST or Bash job that stays
 available after execution. Manage saved jobs with `list_automations`, `get_automation` and
 `run_automation`. Inspect completion through `list_runs`, matching the returned
-slot. Use `get_guide` for validation and recovery details. For REST fallback, POST
+slot. See the installation guide for validation and recovery details. For REST fallback, POST
 `/automations`, GET the saved task and POST `/automations/{id}/run`. Use a stable random
 `run_token` for each intended execution and preserve it across uncertain retries.
 409 requires inspecting the current task and execution history before submitting

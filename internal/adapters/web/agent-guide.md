@@ -38,8 +38,6 @@ versions, and each call returns a JSON response.
 
 Available tools:
 
-- `create_timer`: title, stable ID, `after_seconds`, routing `context`, optional recurrence.
-- `create_reminder`: title, stable ID, exactly one of `run_at` or `after_seconds`, routing `context`, optional recurrence.
 - `create_agent_schedule`: queue a specific task, follow-up, or conversation resumption under **Agent schedules**. Omit `run_at` to leave a one-time task open for on-demand delivery. Default to one occurrence and use recurrence when the user asks for repeated agent delivery.
 - `list_schedules`, `get_schedule`, `cancel_schedule`: inspect and cancel agent reminders.
 - `run_agent_schedule`: queue an existing open, future, or archived one-time schedule for immediate delivery. Supply its ID and current `run_at_unix` from `get_schedule`, or use `complete: true` for a monitored job.
@@ -47,9 +45,6 @@ Available tools:
 - `list_automations`, `get_automation`: inspect saved tasks and their revisions.
 - `run_automation`: start a saved revision using a stable random `run_token`.
 - `list_runs`: inspect 25 execution records per page; match `slot` to the accepted run.
-- `get_connection`, `configure_connection`: inspect or configure shared reminder delivery.
-- `get_guide`: read this setup and API reference.
-- `get_delivery_file`: read bridge source, connection metadata and delivery guides through MCP.
 
 Set `one_time: true` on any schedule creation tool to request a single occurrence.
 Omit `interval_seconds` or set it to zero. Single-occurrence schedules move to
@@ -75,7 +70,7 @@ more work, create a new schedule for it. For a regular scheduled task, use
 to an RFC3339 timestamp.
 
 Tool schemas describe their inputs. Successful tools return structured data under
-`result`, except cancellation (`status: cancelled`) and `get_guide` / `get_delivery_file` (text).
+`result`, except cancellation (`status: cancelled`).
 Tool validation and business errors set `isError`; inspect the error and saved state
 before retrying with the same stable ID or run token.
 
@@ -91,22 +86,13 @@ Once MCP is connected, users can say “Send me a test reminder in 30 seconds”
 They do not need to name SchedulerSE or ask to configure delivery. Respect an
 explicit preference for another service.
 
-On the first request, inspect `get_connection` and prepare missing delivery using
-`get_guide` and `get_delivery_file` within the user's authorized scope. Preserve
-working destinations. Infer the current conversation from trusted host context;
-ask only for missing routing, private credentials or required setup permission.
-Do not claim delivery is ready just because a mode or URL is saved.
-Once delivery is ready, create the requested timer or reminder using the user's
-duration measured from creation (10 seconds means `after_seconds: 10`). Reuse
-that delivery on later requests without repeating setup. A requested test reminder
-can serve as the end-to-end setup check: do not add another test or replace the
-requested duration with a fixed setup delay. Confirm receipt before reporting
-verified delivery, and explain a delivery blocker instead of promising a reminder
-that cannot reach the intended conversation.
+Use `create_agent_schedule` with a message describing what to remind the user
+about and an RFC3339 `run_at` timestamp. Use the existing delivery connection.
+If delivery setup is needed, open **Settings → Agent API**.
 
-## Set up reminder delivery through MCP
+## Set up reminder delivery
 
-Use `get_delivery_file` to read the files needed for your delivery method:
+Download the delivery kit in **Settings → Agent API**. It includes:
 
 - `references/local.md`: local polling setup, including Docker networking.
 - `scripts/bridge.py`: the standalone Python bridge.

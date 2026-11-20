@@ -92,22 +92,9 @@ func TestMCPTransportDiscoveryAndAuthorization(t *testing.T) {
 				t.Error("agent schedule exposes two timing fields")
 			}
 		}
-		if tool.Name == "create_timer" {
-			for _, field := range []string{"id", "title", "context", "after_seconds"} {
-				if _, ok := tool.InputSchema.Properties[field]; !ok {
-					t.Errorf("timer missing schema field %s", field)
-				}
-				found := false
-				for _, required := range tool.InputSchema.Required {
-					found = found || required == field
-				}
-				if !found {
-					t.Errorf("timer field %s must be required", field)
-				}
-			}
-		}
+
 	}
-	for _, name := range []string{"create_timer", "create_reminder", "create_agent_schedule", "list_schedules", "get_schedule", "cancel_schedule", "run_agent_schedule", "create_automation", "list_automations", "get_automation", "run_automation", "list_runs", "get_connection", "configure_connection", "get_guide", "get_delivery_file"} {
+	for _, name := range []string{"create_agent_schedule", "list_schedules", "get_schedule", "cancel_schedule", "run_agent_schedule", "create_automation", "list_automations", "get_automation", "run_automation", "list_runs"} {
 		if !names[name] {
 			t.Error("missing MCP tool", name)
 		}
@@ -135,28 +122,22 @@ func TestMCPTransportDiscoveryAndAuthorization(t *testing.T) {
 	}
 }
 
-func TestMCPSchedulesAndConnection(t *testing.T) {
+func TestMCPSchedules(t *testing.T) {
 	f := fixture(t)
 	if err := f.store.SetAgentToken(digest("mcp-secret")); err != nil {
 		t.Fatal(err)
 	}
-	result := callMCP(t, f, "configure_connection", map[string]any{"delivery_mode": "poll"})
+	timer := map[string]any{"id": "tea-timer", "title": "Tea", "message": "Remind me to drink the tea.", "run_at": time.Now().Add(time.Minute).UTC().Format(time.RFC3339), "context": map[string]any{"conversation_id": "conversation-1"}}
+	result := callMCP(t, f, "create_agent_schedule", timer)
 	if result.IsError {
 		t.Fatal(result.Content)
 	}
-	timer := map[string]any{"id": "tea-timer", "title": "Tea", "after_seconds": 60, "context": map[string]any{"conversation_id": "conversation-1"}}
-	if result = callMCP(t, f, "create_timer", timer); result.IsError {
-		t.Fatal(result.Content)
-	}
 	saved, err := f.store.AgentTask("tea-timer")
-	if err != nil || saved.Kind != "timer" || saved.Status != "pending" {
-		t.Fatal("timer not persisted", saved, err)
+	if err != nil || saved.Kind != "task" || saved.Status != "pending" {
+		t.Fatal("scheduled reminder not persisted", saved, err)
 	}
-	if result = callMCP(t, f, "create_timer", timer); !result.IsError {
-		t.Fatal("duplicate timer accepted")
-	}
-	if result = callMCP(t, f, "create_reminder", map[string]any{"id": "report-reminder", "title": "Report", "run_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339), "context": map[string]any{"conversation_id": "conversation-1"}}); result.IsError {
-		t.Fatal(result.Content)
+	if result = callMCP(t, f, "create_agent_schedule", timer); !result.IsError {
+		t.Fatal("duplicate scheduled reminder accepted")
 	}
 	agentSchedule := map[string]any{"id": "report-follow-up", "title": "Follow up on report", "run_at": time.Now().Add(time.Minute).UTC().Format(time.RFC3339), "one_time": true, "context": map[string]any{"conversation_id": "conversation-1"}}
 	if result = callMCP(t, f, "create_agent_schedule", agentSchedule); result.IsError {
@@ -202,7 +183,7 @@ func TestMCPSchedulesAndConnection(t *testing.T) {
 	if result = callMCP(t, f, "create_agent_schedule", agentSchedule); !result.IsError {
 		t.Fatal("one-time schedule accepted a recurrence")
 	}
-	for _, tool := range []string{"list_schedules", "get_connection", "get_guide"} {
+	for _, tool := range []string{"list_schedules"} {
 		if result = callMCP(t, f, tool, map[string]any{}); result.IsError {
 			t.Fatal(tool, result.Content)
 		}
@@ -225,15 +206,10 @@ func TestMCPSchedulesAndConnection(t *testing.T) {
 			t.Fatal("invalid ID accepted", invalid)
 		}
 	}
-	if result = callMCP(t, f, "create_timer", map[string]any{"id": "missing-context", "title": "Invalid", "after_seconds": 60}); !result.IsError {
+	if result = callMCP(t, f, "create_agent_schedule", map[string]any{"id": "missing-context", "title": "Invalid"}); !result.IsError {
 		t.Fatal("missing context accepted")
 	}
-	if result = callMCP(t, f, "configure_connection", map[string]any{"delivery_mode": "webhook", "webhook_url": "https://example.com/hook", "webhook_authorization": "Bearer private-webhook"}); result.IsError {
-		t.Fatal(result.Content)
-	}
-	if result = callMCP(t, f, "get_connection", map[string]any{}); result.IsError || strings.Contains(string(result.StructuredContent.Result), "private-webhook") {
-		t.Fatal("webhook read leaked secret", result)
-	}
+
 }
 
 func TestMCPOpenAgentScheduleWaitsForExplicitRun(t *testing.T) {
@@ -431,17 +407,17 @@ func TestMCPOfficialClientInteroperability(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, &mcp.ListToolsParams{})
-	if err != nil || len(tools.Tools) != 16 {
+	if err != nil || len(tools.Tools) != 10 {
 		t.Fatalf("discovery: %+v, %v", tools, err)
 	}
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_connection", Arguments: map[string]any{}})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_schedules", Arguments: map[string]any{}})
 	if err != nil || result.IsError {
 		t.Fatalf("tool call: %+v, %v", result, err)
 	}
 	if err := f.store.SetAgentToken(""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_connection", Arguments: map[string]any{}}); err == nil {
+	if _, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_schedules", Arguments: map[string]any{}}); err == nil {
 		t.Fatal("connected MCP client retained access after revocation")
 	}
 }
@@ -463,7 +439,7 @@ func TestMCPBodyLimitAndBrowserSessionIsolation(t *testing.T) {
 	if response.Code != 401 {
 		t.Fatal("browser session authorized MCP", response.Code)
 	}
-	oversized := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_guide","arguments":{"extra":"` + strings.Repeat("x", 270<<10) + `"}}}`
+	oversized := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_schedules","arguments":{"extra":"` + strings.Repeat("x", 270<<10) + `"}}}`
 	request = httptest.NewRequest(http.MethodPost, "/api/agent/v1/mcp", strings.NewReader(oversized))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json, text/event-stream")
@@ -473,32 +449,5 @@ func TestMCPBodyLimitAndBrowserSessionIsolation(t *testing.T) {
 	f.app.ServeHTTP(response, request)
 	if response.Code != http.StatusRequestEntityTooLarge {
 		t.Fatal("oversized MCP body accepted", response.Code)
-	}
-}
-
-func TestMCPDeliverySetupWithoutSkill(t *testing.T) {
-	f := fixture(t)
-	if err := f.store.SetAgentToken(digest("mcp-secret")); err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{"README.md", "scripts/bridge.py", "references/local.md", "references/t3.md", "references/cloudflare.md", "connection.json"} {
-		result := callMCP(t, f, "get_delivery_file", map[string]any{"path": path})
-		if result.IsError || len(result.Content) != 1 || result.Content[0].Text == "" {
-			t.Fatalf("file %s: %+v", path, result)
-		}
-		if strings.Contains(result.Content[0].Text, "mcp-secret") {
-			t.Fatal("credential leaked into delivery files")
-		}
-		if path == "connection.json" {
-			var metadata map[string]string
-			if json.Unmarshal([]byte(result.Content[0].Text), &metadata) != nil || metadata["service_url"] != "http://example.com" || metadata["mcp_url"] != "http://example.com/api/agent/v1/mcp" {
-				t.Fatal("missing request-derived connection metadata", result)
-			}
-		}
-	}
-	for _, path := range []string{"SKILL.md", "../bundle.go", "/etc/passwd"} {
-		if result := callMCP(t, f, "get_delivery_file", map[string]any{"path": path}); !result.IsError {
-			t.Fatal("unexpected delivery file exposed", path)
-		}
 	}
 }

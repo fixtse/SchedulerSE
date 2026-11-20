@@ -176,20 +176,16 @@ Give tokens only to trusted agents; HTTP automations can reach the service netwo
 2. Generate a token and store it privately in the client’s connection settings as
    `Authorization: Bearer <token>`. Choose a client that supports remote HTTP
    connections with bearer headers.
-3. Ask the agent to configure reminder delivery and verify a test reminder. The agent
-   can read setup guides and fetch bridge files directly through MCP.
-   A standalone **delivery kit** is also available for manual installation.
+3. Ask the agent to configure reminder delivery and verify a test reminder. The **delivery kit** and setup guide are available in **Settings → Agent API**.
 
-Use `create_agent_schedule` for a specific future agent task or conversation
-follow-up. Omit the due time to keep a one-time task open until you use
+Use `create_agent_schedule` for timers, reminders, future agent work, and conversation follow-ups. Omit the due time to keep a one-time task open until you use
 `run_agent_schedule` or **Run now**. One-time schedules move to the archive after delivery. Use
 `create_automation` for a persistent HTTP POST or Bash job that stays available
 for manual or cron-triggered runs.
 
-MCP exposes `create_agent_schedule`, `create_timer`, `create_reminder`, `list_schedules`, `get_schedule`,
+MCP exposes `create_agent_schedule`, `list_schedules`, `get_schedule`,
 `cancel_schedule`, `run_agent_schedule`, `create_automation`, `list_automations`, `get_automation`,
-`run_automation`, `list_runs`, `get_connection`, `configure_connection`, `get_guide`
-and `get_delivery_file`.
+`run_automation`, and `list_runs`.
 Execution tools return acceptance; use `list_runs` to inspect completion. Token
 replacement or revocation applies immediately to MCP and REST requests.
 
