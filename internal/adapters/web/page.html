@@ -250,7 +250,7 @@
                     <dt>Reference</dt>
                     <dd>{{.ID}}</dd>
                     <dt>Scheduled time (UTC)</dt>
-                    <dd>{{.DueUTC}}</dd>
+                    <dd>{{if .RunAt}}{{.DueUTC}}{{else}}On demand{{end}}</dd>
                     <dt>Repeat</dt>
                     <dd>{{if .IntervalSeconds}}Every {{.IntervalSeconds}} seconds{{else}}Once{{end}}</dd>
                     <dt>Last HTTP status</dt>
@@ -261,7 +261,10 @@
                 <details>
                     <summary>Agent context</summary>
                     <pre class="agent-context">{{printf "%s" .Context}}</pre>
-                </details>{{if eq .Status "pending"}}<form hx-boost="false" method="post" action="/agent/{{.ID}}/cancel"
+                </details>{{if eq .Status "pending"}}{{if not .RunAt}}
+                <form hx-boost="false" method="post" action="/agent/{{.ID}}/run" class="card-footer">
+                    <input type="hidden" name="csrf" value="{{$.CSRF}}"><button class="run-button">Run now</button>
+                </form>{{end}}<form hx-boost="false" method="post" action="/agent/{{.ID}}/cancel"
                     class="card-footer"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button
                         class="text-button">Cancel schedule</button></form>{{end}}
             </article>{{else}}<div class="empty">

@@ -146,14 +146,14 @@ func (s *Store) RequeueArchivedAgentTask(id string, at time.Time) (bool, error) 
 	return n == 1, err
 }
 
-// RunAgentSchedule moves a future one-time occurrence forward or replays a
+// RunAgentSchedule queues an open or future one-time task, or replays a
 // retained archive entry. The expected timestamp prevents stale retries.
 func (s *Store) RunAgentSchedule(id string, expected int64, now time.Time) (domain.AgentTask, error) {
 	return scanAgent(s.DB.QueryRow(`UPDATE agent_tasks
 		SET status='pending',run_at=CASE WHEN archived_at>0 THEN max(?,run_at+1) ELSE ? END,
 			archived_at=0,http_status=0,last_error=''
 		WHERE id=? AND run_at=? AND interval_seconds=0
-			AND ((status='pending' AND run_at>?) OR archived_at>?)
+			AND ((status='pending' AND (run_at=0 OR run_at>?)) OR archived_at>?)
 		RETURNING `+agentColumns, now.Unix(), now.Unix(), id, expected, now.Unix(), now.Add(-agentArchiveRetention).Unix()))
 }
 
@@ -203,7 +203,7 @@ func (s *Store) deliverAgent(ctx context.Context, h *HTTP) {
 	if err != nil || settings.DeliveryMode != "webhook" || settings.WebhookURL == "" {
 		return
 	}
-	v, err := scanAgent(s.DB.QueryRow(`SELECT `+agentColumns+` FROM agent_tasks WHERE status='pending' AND run_at<=? ORDER BY run_at LIMIT 1`, time.Now().Unix()))
+	v, err := scanAgent(s.DB.QueryRow(`SELECT `+agentColumns+` FROM agent_tasks WHERE status='pending' AND run_at>0 AND run_at<=? ORDER BY run_at LIMIT 1`, time.Now().Unix()))
 	if err != nil {
 		return
 	}
@@ -242,7 +242,7 @@ func (s *Store) deliverAgent(ctx context.Context, h *HTTP) {
 
 func (s *Store) AgentInbox(conversation string) ([]domain.AgentEvent, error) {
 	// Filter in SQL so another conversation cannot starve this consumer's first page.
-	rows, err := s.DB.Query(`SELECT `+agentColumns+` FROM agent_tasks WHERE status='pending' AND run_at<=? AND json_extract(context,'$.conversation_id')=? ORDER BY run_at,id LIMIT 10`, time.Now().Unix(), conversation)
+	rows, err := s.DB.Query(`SELECT `+agentColumns+` FROM agent_tasks WHERE status='pending' AND run_at>0 AND run_at<=? AND json_extract(context,'$.conversation_id')=? ORDER BY run_at,id LIMIT 10`, time.Now().Unix(), conversation)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +281,7 @@ func (s *Store) PickupAgentTask(id string, at int64, consumer string) (bool, err
 	if mode != "poll" {
 		return false, nil
 	}
-	task, err := scanAgent(tx.QueryRow(`SELECT `+agentColumns+` FROM agent_tasks WHERE id=? AND run_at=? AND run_at<=? AND status='pending'`, id, at, time.Now().Unix()))
+	task, err := scanAgent(tx.QueryRow(`SELECT `+agentColumns+` FROM agent_tasks WHERE id=? AND run_at=? AND run_at>0 AND run_at<=? AND status='pending'`, id, at, time.Now().Unix()))
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}

@@ -106,18 +106,18 @@ func (s *Server) runAgentSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		RunAt int64 `json:"run_at_unix"`
+		RunAt *int64 `json:"run_at_unix"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	if dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF || input.RunAt <= 0 || !agentID.MatchString(r.PathValue("id")) {
+	if dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF || input.RunAt == nil || *input.RunAt < 0 || !agentID.MatchString(r.PathValue("id")) {
 		agentError(w, 400, "Provide a valid schedule ID and its current run_at_unix")
 		return
 	}
-	task, err := s.Store.RunAgentSchedule(r.PathValue("id"), input.RunAt, time.Now())
+	task, err := s.Store.RunAgentSchedule(r.PathValue("id"), *input.RunAt, time.Now())
 	if errors.Is(err, sql.ErrNoRows) {
-		agentError(w, 409, "Schedule changed or is unavailable. Inspect it before retrying. Only future or archived one-time schedules can be queued.")
+		agentError(w, 409, "Schedule changed or is unavailable. Inspect it before retrying. Only open, future, or archived one-time schedules can be queued.")
 		return
 	}
 	if err != nil {
@@ -154,8 +154,13 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 		agentError(w, 400, "Use an id of 1–64 lowercase letters, digits or hyphens, a title of 1–100 bytes, kind timer/reminder/task, and message up to 8000 bytes")
 		return
 	}
-	if (input.RunAt == "") == (input.AfterSeconds == 0) || input.AfterSeconds < 0 || input.AfterSeconds > 31536000 || input.IntervalSeconds < 0 || (input.IntervalSeconds > 0 && input.IntervalSeconds < 60) || input.IntervalSeconds > 31536000 {
+	open := input.RunAt == "" && input.AfterSeconds == 0
+	if (input.RunAt != "" && input.AfterSeconds != 0) || input.AfterSeconds < 0 || input.AfterSeconds > 31536000 || input.IntervalSeconds < 0 || (input.IntervalSeconds > 0 && input.IntervalSeconds < 60) || input.IntervalSeconds > 31536000 {
 		agentError(w, 400, "Provide exactly one of run_at or after_seconds (1–31536000); interval_seconds must be 0 or 60–31536000")
+		return
+	}
+	if open && (input.Kind != "task" || input.IntervalSeconds != 0) {
+		agentError(w, 400, "Timers, reminders, and recurring schedules require run_at or after_seconds")
 		return
 	}
 	if input.OneTime && input.IntervalSeconds != 0 {
@@ -172,7 +177,7 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !at.After(now) || at.After(now.AddDate(5, 0, 0)) {
+	if !open && (!at.After(now) || at.After(now.AddDate(5, 0, 0))) {
 		agentError(w, 400, "Schedule must be in the future and within five years")
 		return
 	}
@@ -200,7 +205,11 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 		agentError(w, 409, "Configure the agent webhook in settings first")
 		return
 	}
-	task := domain.AgentTask{ID: input.ID, Kind: input.Kind, Title: input.Title, Message: input.Message, Context: input.Context, RunAt: at.Unix(), IntervalSeconds: input.IntervalSeconds, Status: "pending"}
+	var runAt int64
+	if !open {
+		runAt = at.Unix()
+	}
+	task := domain.AgentTask{ID: input.ID, Kind: input.Kind, Title: input.Title, Message: input.Message, Context: input.Context, RunAt: runAt, IntervalSeconds: input.IntervalSeconds, Status: "pending"}
 	if err = s.Store.CreateAgentTask(task); err != nil {
 		if errors.Is(err, adapters.ErrCapacity) {
 			agentError(w, 429, err.Error())
@@ -253,6 +262,19 @@ func (s *Server) agentPage(w http.ResponseWriter, r *http.Request, csrf, user st
 	}
 	render(w, 200, view{Page: "agent", Title: "Agent schedules", CSRF: csrf, Username: user, AgentTasks: tasks, ArchivedAgentTasks: archive})
 }
+func (s *Server) runOpenAgentSchedule(w http.ResponseWriter, r *http.Request) {
+	_, err := s.Store.RunAgentSchedule(r.PathValue("id"), 0, time.Now())
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "Schedule is no longer open", http.StatusConflict)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Could not queue schedule", http.StatusServiceUnavailable)
+		return
+	}
+	redirect(w, r, "/agent")
+}
+
 func (s *Server) requeueArchivedAgent(w http.ResponseWriter, r *http.Request) {
 	at := time.Now()
 	if r.PathValue("action") == "restore" {

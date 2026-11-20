@@ -40,9 +40,9 @@ Available tools:
 
 - `create_timer`: title, stable ID, `after_seconds`, routing `context`, optional recurrence.
 - `create_reminder`: title, stable ID, exactly one of `run_at` or `after_seconds`, routing `context`, optional recurrence.
-- `create_agent_schedule`: queue a specific future task, follow-up, or conversation resumption under **Agent schedules**. Default to one occurrence and use recurrence when the user asks for repeated agent delivery.
+- `create_agent_schedule`: queue a specific task, follow-up, or conversation resumption under **Agent schedules**. Omit both timing fields to leave a one-time task open for on-demand delivery. Default to one occurrence and use recurrence when the user asks for repeated agent delivery.
 - `list_schedules`, `get_schedule`, `cancel_schedule`: inspect and cancel agent reminders.
-- `run_agent_schedule`: queue an existing future or archived one-time schedule for immediate delivery. Supply its ID and current `run_at_unix` from `get_schedule`.
+- `run_agent_schedule`: queue an existing open, future, or archived one-time schedule for immediate delivery. Supply its ID and current `run_at_unix` from `get_schedule`.
 - `create_automation`: save a persistent, reusable HTTP POST or Bash job under **Automations**. It remains saved after each run and supports manual execution or cron.
 - `list_automations`, `get_automation`: inspect saved tasks and their revisions.
 - `run_automation`: start a saved revision using a stable random `run_token`.
@@ -166,7 +166,7 @@ POST `/tasks` with `Content-Type: application/json`:
 Use exactly one of `after_seconds` (1–31536000) or `run_at`, an RFC3339 timestamp
 including its UTC offset, for example `2026-10-21T09:00:00+02:00`. Resolve the
 user's timezone before converting local times. Dates must be in the future and
-within five years. `kind` is `timer`, `reminder`, or `task`. All three produce due events for polling or webhook delivery; this service does
+within five years. For an on-demand one-time schedule, use `kind: "task"` and omit both timing fields and recurrence. It stays open with `run_at_unix: 0` until explicitly queued by `run_agent_schedule` or **Run now**. `kind` is `timer`, `reminder`, or `task`. All three produce due events for polling or webhook delivery; this service does
 not execute an AI prompt itself.
 
 Optional `interval_seconds`: 0 (one-shot, default), or 60–31536000 for fixed elapsed
@@ -187,7 +187,7 @@ is required: a nonempty string of up to 256 bytes that matches the bridge's rout
 
 - GET `/tasks`: latest 200 tasks by scheduled time, including terminal results.
 - GET `/tasks/{id}`: inspect one task, including older tasks outside the list.
-- POST `/tasks/{id}/run`: provide JSON `{"run_at_unix": <current timestamp>}` to queue a future or archived one-time schedule immediately (202). Keep the original timestamp on retries. A 409 means the occurrence changed or is unavailable. Inspect the saved schedule before choosing another action.
+- POST `/tasks/{id}/run`: provide JSON `{"run_at_unix": <current timestamp>}` to queue an open, future, or archived one-time schedule immediately (202). Use 0 for an open task. Keep the original timestamp on retries. A 409 means the occurrence changed or is unavailable. Inspect the saved schedule before choosing another action.
 - DELETE `/tasks/{id}`: cancel a pending task (204). A missing task or a task already
   delivering, delivered, failed, interrupted or cancelled returns 409.
 - GET `/guide`: these instructions.

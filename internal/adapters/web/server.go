@@ -288,6 +288,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 	mux.HandleFunc("GET /agent", func(w http.ResponseWriter, r *http.Request) { s.agentPage(w, r, csrf, username) })
 	mux.HandleFunc("POST /agent/{id}/cancel", func(w http.ResponseWriter, r *http.Request) { s.cancelAgent(w, r, false) })
+	mux.HandleFunc("POST /agent/{id}/run", s.runOpenAgentSchedule)
 	mux.HandleFunc("POST /agent/{id}/archive/{action}", func(w http.ResponseWriter, r *http.Request) {
 		switch r.PathValue("action") {
 		case "restore", "run":

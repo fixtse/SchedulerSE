@@ -181,7 +181,8 @@ Give tokens only to trusted agents; HTTP automations can reach the service netwo
    A standalone **delivery kit** is also available for manual installation.
 
 Use `create_agent_schedule` for a specific future agent task or conversation
-follow-up. One-time schedules move to the archive after delivery. Use
+follow-up. Omit the due time to keep a one-time task open until you use
+`run_agent_schedule` or **Run now**. One-time schedules move to the archive after delivery. Use
 `create_automation` for a persistent HTTP POST or Bash job that stays available
 for manual or cron-triggered runs.
 

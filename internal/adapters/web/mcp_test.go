@@ -228,6 +228,37 @@ func TestMCPSchedulesAndConnection(t *testing.T) {
 	}
 }
 
+func TestMCPOpenAgentScheduleWaitsForExplicitRun(t *testing.T) {
+	f := fixture(t)
+	if err := f.store.SetAgentToken(digest("mcp-secret")); err != nil {
+		t.Fatal(err)
+	}
+	create := map[string]any{"id": "open-task", "title": "Completion callback", "one_time": true, "context": map[string]any{"conversation_id": "open-thread"}}
+	if result := callMCP(t, f, "create_agent_schedule", create); result.IsError {
+		t.Fatal(result.Content)
+	}
+	task, err := f.store.AgentTask("open-task")
+	if err != nil || task.RunAt != 0 || task.Status != "pending" {
+		t.Fatal("task did not stay open", task, err)
+	}
+	if events, err := f.store.AgentInbox("open-thread"); err != nil || len(events) != 0 {
+		t.Fatal("open task was offered for automatic delivery", events, err)
+	}
+	if ok, err := f.store.PickupAgentTask(task.ID, 0, "consumer"); err != nil || ok {
+		t.Fatal("open task was picked up before triggering", ok, err)
+	}
+	run := map[string]any{"id": task.ID, "run_at_unix": 0}
+	if result := callMCP(t, f, "run_agent_schedule", run); result.IsError {
+		t.Fatal(result.Content)
+	}
+	if events, err := f.store.AgentInbox("open-thread"); err != nil || len(events) != 1 || events[0].Task.RunAt <= 0 {
+		t.Fatal("triggered task did not become due", events, err)
+	}
+	if result := callMCP(t, f, "run_agent_schedule", run); !result.IsError {
+		t.Fatal("duplicate trigger accepted")
+	}
+}
+
 func TestMCPAutomationsExecuteAndReportHistory(t *testing.T) {
 	f := fixture(t)
 	if err := f.store.SetAgentToken(digest("mcp-secret")); err != nil {
