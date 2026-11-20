@@ -186,7 +186,7 @@ follow-up. One-time schedules move to the archive after delivery. Use
 for manual or cron-triggered runs.
 
 MCP exposes `create_agent_schedule`, `create_timer`, `create_reminder`, `list_schedules`, `get_schedule`,
-`cancel_schedule`, `create_automation`, `list_automations`, `get_automation`,
+`cancel_schedule`, `run_agent_schedule`, `create_automation`, `list_automations`, `get_automation`,
 `run_automation`, `list_runs`, `get_connection`, `configure_connection`, `get_guide`
 and `get_delivery_file`.
 Execution tools return acceptance; use `list_runs` to inspect completion. Token

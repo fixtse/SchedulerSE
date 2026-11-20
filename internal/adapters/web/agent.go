@@ -96,9 +96,37 @@ func (s *Server) agentRoutes(w http.ResponseWriter, r *http.Request) {
 		agentJSON(w, 200, task)
 	})
 	mux.HandleFunc("POST /api/agent/v1/tasks", s.createAgentTask)
+	mux.HandleFunc("POST /api/agent/v1/tasks/{id}/run", s.runAgentSchedule)
 	mux.HandleFunc("DELETE /api/agent/v1/tasks/{id}", func(w http.ResponseWriter, r *http.Request) { s.cancelAgent(w, r, true) })
 	mux.ServeHTTP(w, r)
 }
+func (s *Server) runAgentSchedule(w http.ResponseWriter, r *http.Request) {
+	if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" {
+		agentError(w, 415, "Use Content-Type: application/json")
+		return
+	}
+	var input struct {
+		RunAt int64 `json:"run_at_unix"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF || input.RunAt <= 0 || !agentID.MatchString(r.PathValue("id")) {
+		agentError(w, 400, "Provide a valid schedule ID and its current run_at_unix")
+		return
+	}
+	task, err := s.Store.RunAgentSchedule(r.PathValue("id"), input.RunAt, time.Now())
+	if errors.Is(err, sql.ErrNoRows) {
+		agentError(w, 409, "Schedule changed or is unavailable. Inspect it before retrying. Only future or archived one-time schedules can be queued.")
+		return
+	}
+	if err != nil {
+		agentError(w, 503, "Could not queue schedule")
+		return
+	}
+	agentJSON(w, http.StatusAccepted, task)
+}
+
 func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 	if media := strings.Split(r.Header.Get("Content-Type"), ";")[0]; media != "application/json" {
 		agentError(w, 415, "Use Content-Type: application/json")

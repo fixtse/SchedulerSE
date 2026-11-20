@@ -146,6 +146,17 @@ func (s *Store) RequeueArchivedAgentTask(id string, at time.Time) (bool, error) 
 	return n == 1, err
 }
 
+// RunAgentSchedule moves a future one-time occurrence forward or replays a
+// retained archive entry. The expected timestamp prevents stale retries.
+func (s *Store) RunAgentSchedule(id string, expected int64, now time.Time) (domain.AgentTask, error) {
+	return scanAgent(s.DB.QueryRow(`UPDATE agent_tasks
+		SET status='pending',run_at=CASE WHEN archived_at>0 THEN max(?,run_at+1) ELSE ? END,
+			archived_at=0,http_status=0,last_error=''
+		WHERE id=? AND run_at=? AND interval_seconds=0
+			AND ((status='pending' AND run_at>?) OR archived_at>?)
+		RETURNING `+agentColumns, now.Unix(), now.Unix(), id, expected, now.Unix(), now.Add(-agentArchiveRetention).Unix()))
+}
+
 func (s *Store) pruneAgentArchive(now time.Time) error {
 	cutoff := now.Add(-agentArchiveRetention).Unix()
 	tx, err := s.DB.Begin()

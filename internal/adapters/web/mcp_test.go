@@ -99,7 +99,7 @@ func TestMCPTransportDiscoveryAndAuthorization(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"create_timer", "create_reminder", "create_agent_schedule", "list_schedules", "get_schedule", "cancel_schedule", "create_automation", "list_automations", "get_automation", "run_automation", "list_runs", "get_connection", "configure_connection", "get_guide", "get_delivery_file"} {
+	for _, name := range []string{"create_timer", "create_reminder", "create_agent_schedule", "list_schedules", "get_schedule", "cancel_schedule", "run_agent_schedule", "create_automation", "list_automations", "get_automation", "run_automation", "list_runs", "get_connection", "configure_connection", "get_guide", "get_delivery_file"} {
 		if !names[name] {
 			t.Error("missing MCP tool", name)
 		}
@@ -157,6 +157,28 @@ func TestMCPSchedulesAndConnection(t *testing.T) {
 	task, err := f.store.AgentTask("report-follow-up")
 	if err != nil || task.Kind != "task" || task.IntervalSeconds != 0 {
 		t.Fatal("agent task not persisted", task, err)
+	}
+	run := map[string]any{"id": task.ID, "run_at_unix": task.RunAt}
+	if result = callMCP(t, f, "run_agent_schedule", run); result.IsError {
+		t.Fatal(result.Content)
+	}
+	moved, err := f.store.AgentTask(task.ID)
+	if err != nil || moved.RunAt >= task.RunAt || moved.RunAt > time.Now().Unix() {
+		t.Fatal("schedule was not moved forward", moved, err)
+	}
+	if result = callMCP(t, f, "run_agent_schedule", run); !result.IsError {
+		t.Fatal("stale run request was accepted")
+	}
+	if ok, err := f.store.PickupAgentTask(task.ID, moved.RunAt, "consumer"); err != nil || !ok {
+		t.Fatal("could not deliver the moved schedule", ok, err)
+	}
+	run["run_at_unix"] = moved.RunAt
+	if result = callMCP(t, f, "run_agent_schedule", run); result.IsError {
+		t.Fatal("archived schedule could not be replayed", result.Content)
+	}
+	replayed, err := f.store.AgentTask(task.ID)
+	if err != nil || replayed.Status != "pending" || replayed.RunAt <= moved.RunAt || replayed.ArchivedAt != 0 {
+		t.Fatal("schedule was not queued as a new occurrence", replayed, err)
 	}
 	jobs, err := f.store.Jobs()
 	if err != nil {
@@ -302,7 +324,7 @@ func TestMCPOfficialClientInteroperability(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, &mcp.ListToolsParams{})
-	if err != nil || len(tools.Tools) != 15 {
+	if err != nil || len(tools.Tools) != 16 {
 		t.Fatalf("discovery: %+v, %v", tools, err)
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "get_connection", Arguments: map[string]any{}})

@@ -42,6 +42,7 @@ Available tools:
 - `create_reminder`: title, stable ID, exactly one of `run_at` or `after_seconds`, routing `context`, optional recurrence.
 - `create_agent_schedule`: queue a specific future task, follow-up, or conversation resumption under **Agent schedules**. Default to one occurrence and use recurrence when the user asks for repeated agent delivery.
 - `list_schedules`, `get_schedule`, `cancel_schedule`: inspect and cancel agent reminders.
+- `run_agent_schedule`: queue an existing future or archived one-time schedule for immediate delivery. Supply its ID and current `run_at_unix` from `get_schedule`.
 - `create_automation`: save a persistent, reusable HTTP POST or Bash job under **Automations**. It remains saved after each run and supports manual execution or cron.
 - `list_automations`, `get_automation`: inspect saved tasks and their revisions.
 - `run_automation`: start a saved revision using a stable random `run_token`.
@@ -186,6 +187,7 @@ is required: a nonempty string of up to 256 bytes that matches the bridge's rout
 
 - GET `/tasks`: latest 200 tasks by scheduled time, including terminal results.
 - GET `/tasks/{id}`: inspect one task, including older tasks outside the list.
+- POST `/tasks/{id}/run`: provide JSON `{"run_at_unix": <current timestamp>}` to queue a future or archived one-time schedule immediately (202). Keep the original timestamp on retries. A 409 means the occurrence changed or is unavailable. Inspect the saved schedule before choosing another action.
 - DELETE `/tasks/{id}`: cancel a pending task (204). A missing task or a task already
   delivering, delivered, failed, interrupted or cancelled returns 409.
 - GET `/guide`: these instructions.
