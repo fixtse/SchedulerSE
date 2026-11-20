@@ -69,6 +69,8 @@ more work, create a new schedule for it. For a regular scheduled task, use
 `run_at` without requesting a completion webhook. Convert relative requests
 to an RFC3339 timestamp.
 
+Use `get_delivery_file` to read the T3 Code delivery setup guide.
+
 Tool schemas describe their inputs. Successful tools return structured data under
 `result`, except cancellation (`status: cancelled`).
 Tool validation and business errors set `isError`; inspect the error and saved state

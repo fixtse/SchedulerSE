@@ -94,7 +94,7 @@ func TestMCPTransportDiscoveryAndAuthorization(t *testing.T) {
 		}
 
 	}
-	for _, name := range []string{"create_agent_schedule", "list_schedules", "get_schedule", "cancel_schedule", "run_agent_schedule", "create_automation", "list_automations", "get_automation", "run_automation", "list_runs"} {
+	for _, name := range []string{"create_agent_schedule", "list_schedules", "get_schedule", "cancel_schedule", "run_agent_schedule", "create_automation", "list_automations", "get_automation", "run_automation", "list_runs", "get_delivery_file"} {
 		if !names[name] {
 			t.Error("missing MCP tool", name)
 		}
@@ -407,7 +407,7 @@ func TestMCPOfficialClientInteroperability(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, &mcp.ListToolsParams{})
-	if err != nil || len(tools.Tools) != 10 {
+	if err != nil || len(tools.Tools) != 11 {
 		t.Fatalf("discovery: %+v, %v", tools, err)
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "list_schedules", Arguments: map[string]any{}})
@@ -449,5 +449,19 @@ func TestMCPBodyLimitAndBrowserSessionIsolation(t *testing.T) {
 	f.app.ServeHTTP(response, request)
 	if response.Code != http.StatusRequestEntityTooLarge {
 		t.Fatal("oversized MCP body accepted", response.Code)
+	}
+}
+
+func TestMCPT3DeliveryGuide(t *testing.T) {
+	f := fixture(t)
+	if err := f.store.SetAgentToken(digest("mcp-secret")); err != nil {
+		t.Fatal(err)
+	}
+	result := callMCP(t, f, "get_delivery_file", map[string]any{})
+	if result.IsError || len(result.Content) != 1 || !strings.Contains(result.Content[0].Text, "bindToCurrentThread") {
+		t.Fatal("T3 Code delivery guide is unavailable")
+	}
+	if result := callMCP(t, f, "get_delivery_file", map[string]any{"path": "connection.json"}); !result.IsError {
+		t.Fatal("unexpected delivery file exposed")
 	}
 }

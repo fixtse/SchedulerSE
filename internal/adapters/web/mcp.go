@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/fixtse/SchedulerSE/internal/agentkit"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -132,6 +134,23 @@ func (s *Server) newMCPHandler() http.Handler {
 			}
 			return "/runs?page=" + strconv.Itoa(page), nil
 		})
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "get_delivery_file", Description: "Read the T3 Code delivery setup guide when configuring SchedulerSE for T3 Code.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input struct {
+		Path string `json:"path,omitempty" jsonschema:"T3 Code guide path: references/t3.md (default)"`
+	}) (*mcp.CallToolResult, any, error) {
+		const path = "references/t3.md"
+		if input.Path != "" && input.Path != path {
+			return nil, nil, errors.New("Only the T3 Code delivery guide is available through this tool")
+		}
+		origin, _ := ctx.Value(mcpServiceOriginKey{}).(string)
+		data, err := agentkit.DeliveryFile(path, origin)
+		if err != nil {
+			return nil, nil, err
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
+	})
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: 256 << 10})
 }
 

@@ -185,7 +185,7 @@ for manual or cron-triggered runs.
 
 MCP exposes `create_agent_schedule`, `list_schedules`, `get_schedule`,
 `cancel_schedule`, `run_agent_schedule`, `create_automation`, `list_automations`, `get_automation`,
-`run_automation`, and `list_runs`.
+`run_automation`, `list_runs`, and `get_delivery_file` for T3 Code setup.
 Execution tools return acceptance; use `list_runs` to inspect completion. Token
 replacement or revocation applies immediately to MCP and REST requests.
 
