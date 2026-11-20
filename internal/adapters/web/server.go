@@ -214,6 +214,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		styleAsset.ServeHTTP(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, agentCompletionPrefix) {
+		s.agentCompletionWebhook(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/agent/") {
 		s.agentAPI(w, r)
 		return

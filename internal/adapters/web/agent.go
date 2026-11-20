@@ -100,6 +100,33 @@ func (s *Server) agentRoutes(w http.ResponseWriter, r *http.Request) {
 	mux.HandleFunc("DELETE /api/agent/v1/tasks/{id}", func(w http.ResponseWriter, r *http.Request) { s.cancelAgent(w, r, true) })
 	mux.ServeHTTP(w, r)
 }
+
+const agentCompletionPrefix = "/api/agent/v1/completion/"
+
+func (s *Server) agentCompletionWebhook(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		agentError(w, 405, "Use POST")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, agentCompletionPrefix)
+	auth, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || !runTokenPattern.MatchString(auth) || !agentID.MatchString(id) {
+		agentError(w, 404, "Completion webhook unavailable")
+		return
+	}
+	err := s.Store.TriggerAgentCompletion(id, digest(auth), time.Now())
+	if errors.Is(err, sql.ErrNoRows) {
+		agentError(w, 404, "Completion webhook unavailable")
+		return
+	}
+	if err != nil {
+		agentError(w, 503, "Could not queue completion")
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
 func (s *Server) runAgentSchedule(w http.ResponseWriter, r *http.Request) {
 	if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" {
 		agentError(w, 415, "Use Content-Type: application/json")
@@ -147,6 +174,7 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 		Context              json.RawMessage `json:"context"`
 		RunAt                string          `json:"run_at"`
 		AfterSeconds         int64           `json:"after_seconds"`
+		CompletionWebhook    bool            `json:"completion_webhook"`
 		CheckIntervalSeconds int64           `json:"check_interval_seconds"`
 		OneTime              bool            `json:"one_time"`
 		IntervalSeconds      int64           `json:"interval_seconds"`
@@ -166,6 +194,15 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 	if (input.RunAt != "" && input.AfterSeconds != 0) || input.AfterSeconds < 0 || input.AfterSeconds > 31536000 || input.IntervalSeconds < 0 || (input.IntervalSeconds > 0 && input.IntervalSeconds < 60) || input.IntervalSeconds > 31536000 {
 		agentError(w, 400, "Provide exactly one of run_at or after_seconds (1–31536000); interval_seconds must be 0 or 60–31536000")
 		return
+	}
+	if input.CompletionWebhook {
+		if input.Kind != "task" || input.IntervalSeconds != 0 {
+			agentError(w, 400, "Completion webhooks require a one-time agent task")
+			return
+		}
+		if input.CheckIntervalSeconds == 0 {
+			input.CheckIntervalSeconds = 300
+		}
 	}
 	if input.CheckIntervalSeconds != 0 && (input.Kind != "task" || input.IntervalSeconds != 0 ||
 		input.CheckIntervalSeconds < 1 || input.CheckIntervalSeconds > 31536000) {
@@ -225,7 +262,21 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 		runAt = now.Unix() + input.CheckIntervalSeconds
 	}
 	task := domain.AgentTask{ID: input.ID, Kind: input.Kind, Title: input.Title, Message: input.Message, Context: input.Context, RunAt: runAt, IntervalSeconds: input.IntervalSeconds, CheckIntervalSeconds: input.CheckIntervalSeconds, Status: "pending"}
-	if err = s.Store.CreateAgentTask(task); err != nil {
+	var webhookURL, webhookToken, tokenHash string
+	if input.CompletionWebhook {
+		origin, _ := r.Context().Value(mcpServiceOriginKey{}).(string)
+		if origin == "" {
+			origin, err = s.agentServiceOrigin(r)
+			if err != nil {
+				agentError(w, 400, "Invalid service origin")
+				return
+			}
+		}
+		webhookURL = origin + agentCompletionPrefix + task.ID
+		webhookToken = rand.Text()
+		tokenHash = digest(webhookToken)
+	}
+	if err = s.Store.CreateAgentTaskWithCompletion(task, tokenHash); err != nil {
 		if errors.Is(err, adapters.ErrCapacity) {
 			agentError(w, 429, err.Error())
 			return
@@ -238,6 +289,14 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Location", "/api/agent/v1/tasks/"+task.ID)
+	if input.CompletionWebhook {
+		agentJSON(w, 201, struct {
+			domain.AgentTask
+			WebhookURL   string `json:"completion_webhook_url"`
+			WebhookToken string `json:"completion_webhook_token"`
+		}{task, webhookURL, webhookToken})
+		return
+	}
 	agentJSON(w, 201, task)
 }
 func (s *Server) cancelAgent(w http.ResponseWriter, r *http.Request, api bool) {

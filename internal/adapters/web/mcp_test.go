@@ -288,6 +288,45 @@ func TestMCPMonitoredScheduleQueuesCompletionByID(t *testing.T) {
 	}
 }
 
+func TestMCPCompletionWebhookIsScopedAndRetrySafe(t *testing.T) {
+	f := fixture(t)
+	if err := f.store.SetAgentToken(digest("mcp-secret")); err != nil {
+		t.Fatal(err)
+	}
+	result := callMCP(t, f, "create_agent_schedule", map[string]any{
+		"id": "webhook-job", "title": "Build", "completion_webhook": true,
+		"context": map[string]any{"conversation_id": "thread"},
+	})
+	var created struct {
+		URL   string `json:"completion_webhook_url"`
+		Token string `json:"completion_webhook_token"`
+	}
+	if result.IsError || json.Unmarshal(result.StructuredContent.Result, &created) != nil || created.URL == "" || created.Token == "" {
+		t.Fatal("missing completion webhook credentials")
+	}
+	path := "/api/agent/v1/completion/webhook-job"
+	for _, attempt := range []struct {
+		token string
+		want  int
+	}{{"mcp-secret", 404}, {created.Token, 202}, {created.Token, 202}} {
+		request := httptest.NewRequest(http.MethodPost, path, nil)
+		request.Header.Set("Authorization", "Bearer "+attempt.token)
+		response := httptest.NewRecorder()
+		f.app.ServeHTTP(response, request)
+		if response.Code != attempt.want {
+			t.Fatal("unexpected webhook response", response.Code)
+		}
+	}
+	saved, err := f.store.AgentTask("webhook-job")
+	if err != nil || saved.CheckIntervalSeconds != 300 || !saved.CompletionRequested {
+		t.Fatal("completion not queued", saved, err)
+	}
+	result = callMCP(t, f, "get_schedule", map[string]any{"id": "webhook-job"})
+	if result.IsError || strings.Contains(string(result.StructuredContent.Result), created.Token) {
+		t.Fatal("schedule lookup exposed its credential")
+	}
+}
+
 func TestMCPAutomationsExecuteAndReportHistory(t *testing.T) {
 	f := fixture(t)
 	if err := f.store.SetAgentToken(digest("mcp-secret")); err != nil {

@@ -40,7 +40,14 @@ func migrateAgent(db *sql.DB) error {
 			}
 		}
 	}
-	return nil
+	var hasToken int
+	if err = db.QueryRow("SELECT count(*) FROM pragma_table_info('agent_tasks') WHERE name='completion_token_hash'").Scan(&hasToken); err != nil {
+		return err
+	}
+	if hasToken == 0 {
+		_, err = db.Exec("ALTER TABLE agent_tasks ADD COLUMN completion_token_hash TEXT NOT NULL DEFAULT ''")
+	}
+	return err
 }
 
 func (s *Store) AgentSettings() (v domain.AgentSettings, err error) {
@@ -118,7 +125,11 @@ func (s *Store) AgentTask(id string) (domain.AgentTask, error) {
 	return scanAgent(s.DB.QueryRow(`SELECT `+agentColumns+` FROM agent_tasks WHERE id=?`, id))
 }
 func (s *Store) CreateAgentTask(v domain.AgentTask) error {
-	result, err := s.DB.Exec(`INSERT INTO agent_tasks(id,kind,title,message,context,run_at,interval_seconds,check_interval_seconds) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM agent_tasks)<1000`, v.ID, v.Kind, v.Title, v.Message, string(v.Context), v.RunAt, v.IntervalSeconds, v.CheckIntervalSeconds)
+	return s.CreateAgentTaskWithCompletion(v, "")
+}
+
+func (s *Store) CreateAgentTaskWithCompletion(v domain.AgentTask, tokenHash string) error {
+	result, err := s.DB.Exec(`INSERT INTO agent_tasks(id,kind,title,message,context,run_at,interval_seconds,check_interval_seconds,completion_token_hash) SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM agent_tasks)<1000`, v.ID, v.Kind, v.Title, v.Message, string(v.Context), v.RunAt, v.IntervalSeconds, v.CheckIntervalSeconds, tokenHash)
 	if err != nil {
 		return err
 	}
@@ -165,11 +176,22 @@ func (s *Store) RunAgentSchedule(id string, expected int64, now time.Time) (doma
 // CompleteAgentSchedule replaces the next check with a final delivery. If a
 // webhook check is in flight, its settlement queues the final occurrence.
 func (s *Store) CompleteAgentSchedule(id string, now time.Time) (domain.AgentTask, error) {
+	return s.queueAgentCompletion(id, "", now)
+}
+
+func (s *Store) TriggerAgentCompletion(id, tokenHash string, now time.Time) error {
+	_, err := s.queueAgentCompletion(id, tokenHash, now)
+	return err
+}
+
+func (s *Store) queueAgentCompletion(id, tokenHash string, now time.Time) (domain.AgentTask, error) {
 	return scanAgent(s.DB.QueryRow(`UPDATE agent_tasks SET completion_requested=1,
-		run_at=CASE WHEN status='delivering' THEN run_at WHEN run_at=? THEN run_at+1 ELSE ? END
-		WHERE id=? AND check_interval_seconds>0 AND completion_requested=0
-			AND status IN ('pending','delivering')
-		RETURNING `+agentColumns, now.Unix()+1, now.Unix()+1, id))
+		run_at=CASE WHEN status='delivering' OR completion_requested=1 THEN run_at WHEN run_at=? THEN run_at+1 ELSE ? END
+		WHERE id=? AND check_interval_seconds>0
+			AND ((completion_requested=0 AND status IN ('pending','delivering'))
+				OR (completion_requested=1 AND ?<>''))
+			AND (?='' OR completion_token_hash=?)
+		RETURNING `+agentColumns, now.Unix()+1, now.Unix()+1, id, tokenHash, tokenHash, tokenHash))
 }
 
 func (s *Store) pruneAgentArchive(now time.Time) error {

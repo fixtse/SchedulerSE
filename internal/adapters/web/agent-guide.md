@@ -57,18 +57,22 @@ Omit `interval_seconds` or set it to zero. Single-occurrence schedules move to
 acknowledges pickup. For monitored jobs this applies to the final event. The archive keeps them for five days after delivery. Use
 **Restore schedule** to choose a new delay or **Run now** to queue immediate delivery.
 
-Before launching a long-running job, call `create_agent_schedule` with
-`check_interval_seconds` using the existing delivery connection. If creation
-fails, report the error before launching. Set
-`run_at` or `after_seconds` to choose the first check, or omit both to check
-after one interval. Each `schedule.due` event with `phase: "check"` asks the
-agent to inspect progress. An ongoing job stays active and checks continue;
-the agent does not need to recreate the schedule. After the job exits and
-records its result, call `run_agent_schedule` with its ID and `complete: true`.
-This stops future checks and queues a final event with `phase: "completion"`.
-The schedule archives only after final delivery. Inspect saved state if a
-completion request returns a conflict; a completion already queued needs no
-second request.
+For a long-running job, call `create_agent_schedule` with
+`completion_webhook: true`. Give the returned `completion_webhook_url` and
+`completion_webhook_token` privately to the process wrapper. Once the process
+exits and the result is recorded, send an empty POST to that URL with
+`Authorization: Bearer <completion_webhook_token>`. Use the same URL and token
+on retries. A 202 means completion was accepted for delivery. The token is
+returned at creation and is scoped to that schedule.
+
+Checks default to 300 seconds. Set `check_interval_seconds` to override the
+interval, and `run_at` or `after_seconds` to choose the first check. Each
+`phase: "check"` callback asks the agent to inspect progress. The completion
+POST stops future checks and queues a `phase: "completion"` callback. SchedulerSE
+archives the schedule after delivering that callback. If verification finds
+more work, create a new schedule for it. Use `run_agent_schedule` manually only
+when requested. For a regular scheduled task, use `after_seconds` or `run_at`
+without requesting a completion webhook.
 
 Tool schemas describe their inputs. Successful tools return structured data under
 `result`, except cancellation (`status: cancelled`) and `get_guide` / `get_delivery_file` (text).
