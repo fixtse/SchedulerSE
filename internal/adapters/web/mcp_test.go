@@ -259,6 +259,35 @@ func TestMCPOpenAgentScheduleWaitsForExplicitRun(t *testing.T) {
 	}
 }
 
+func TestMCPMonitoredScheduleQueuesCompletionByID(t *testing.T) {
+	f := fixture(t)
+	if err := f.store.SetAgentToken(digest("mcp-secret")); err != nil {
+		t.Fatal(err)
+	}
+	create := map[string]any{
+		"id": "monitored-job", "title": "Build", "one_time": true,
+		"check_interval_seconds": 60, "context": map[string]any{"conversation_id": "thread"},
+	}
+	if result := callMCP(t, f, "create_agent_schedule", create); result.IsError {
+		t.Fatal(result.Content)
+	}
+	saved, err := f.store.AgentTask("monitored-job")
+	if err != nil || saved.CheckIntervalSeconds != 60 || saved.RunAt <= time.Now().Unix() {
+		t.Fatal("missing initial health check", saved, err)
+	}
+	run := map[string]any{"id": saved.ID, "complete": true}
+	if result := callMCP(t, f, "run_agent_schedule", run); result.IsError {
+		t.Fatal(result.Content)
+	}
+	final, err := f.store.AgentTask(saved.ID)
+	if err != nil || !final.CompletionRequested || final.RunAt >= saved.RunAt {
+		t.Fatal("completion did not replace the health check", final, err)
+	}
+	if result := callMCP(t, f, "run_agent_schedule", run); !result.IsError {
+		t.Fatal("duplicate completion accepted")
+	}
+}
+
 func TestMCPAutomationsExecuteAndReportHistory(t *testing.T) {
 	f := fixture(t)
 	if err := f.store.SetAgentToken(digest("mcp-secret")); err != nil {

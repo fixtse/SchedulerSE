@@ -42,7 +42,7 @@ Available tools:
 - `create_reminder`: title, stable ID, exactly one of `run_at` or `after_seconds`, routing `context`, optional recurrence.
 - `create_agent_schedule`: queue a specific task, follow-up, or conversation resumption under **Agent schedules**. Omit both timing fields to leave a one-time task open for on-demand delivery. Default to one occurrence and use recurrence when the user asks for repeated agent delivery.
 - `list_schedules`, `get_schedule`, `cancel_schedule`: inspect and cancel agent reminders.
-- `run_agent_schedule`: queue an existing open, future, or archived one-time schedule for immediate delivery. Supply its ID and current `run_at_unix` from `get_schedule`.
+- `run_agent_schedule`: queue an existing open, future, or archived one-time schedule for immediate delivery. Supply its ID and current `run_at_unix` from `get_schedule`, or use `complete: true` for a monitored job.
 - `create_automation`: save a persistent, reusable HTTP POST or Bash job under **Automations**. It remains saved after each run and supports manual execution or cron.
 - `list_automations`, `get_automation`: inspect saved tasks and their revisions.
 - `run_automation`: start a saved revision using a stable random `run_token`.
@@ -52,16 +52,21 @@ Available tools:
 - `get_delivery_file`: read bridge source, connection metadata and delivery guides through MCP.
 
 Set `one_time: true` on any schedule creation tool to request a single occurrence.
-Omit `interval_seconds` or set it to zero. All single-occurrence schedules move to
+Omit `interval_seconds` or set it to zero. Single-occurrence schedules move to
 **Agent schedules → Archive** after webhook delivery succeeds or the poll consumer
-acknowledges pickup. The archive keeps them for five days after delivery. Use
+acknowledges pickup. For monitored jobs this applies to the final event. The archive keeps them for five days after delivery. Use
 **Restore schedule** to choose a new delay or **Run now** to queue immediate delivery.
 
-For long-running jobs, create two one-time schedules before launch. Leave the
-completion schedule open and trigger it with `run_agent_schedule` after recording
-the exit status. Give the separate health check a due time based on expected
-runtime plus a margin. If the check fires first, inspect the recorded status and
-progress. Cancel the pending check once job completion has been verified.
+For a long-running job, create one task with `check_interval_seconds`. Set
+`run_at` or `after_seconds` to choose the first check, or omit both to check
+after one interval. Each `schedule.due` event with `phase: "check"` asks the
+agent to inspect progress. An ongoing job stays active and checks continue;
+the agent does not need to recreate the schedule. After the job exits and
+records its result, call `run_agent_schedule` with its ID and `complete: true`.
+This stops future checks and queues a final event with `phase: "completion"`.
+The schedule archives only after final delivery. Inspect saved state if a
+completion request returns a conflict; a completion already queued needs no
+second request.
 
 Tool schemas describe their inputs. Successful tools return structured data under
 `result`, except cancellation (`status: cancelled`) and `get_guide` / `get_delivery_file` (text).
@@ -189,11 +194,11 @@ The title is required (up to 100 bytes); message is optional (up to 8000 bytes).
 Include routing references without secrets. In polling mode, `context.conversation_id`
 is required: a nonempty string of up to 256 bytes that matches the bridge's routing label.
 
-## Inspect and cancel
+## Inspect, run, and cancel
 
 - GET `/tasks`: latest 200 tasks by scheduled time, including terminal results.
 - GET `/tasks/{id}`: inspect one task, including older tasks outside the list.
-- POST `/tasks/{id}/run`: provide JSON `{"run_at_unix": <current timestamp>}` to queue an open, future, or archived one-time schedule immediately (202). Use 0 for an open task. Keep the original timestamp on retries. A 409 means the occurrence changed or is unavailable. Inspect the saved schedule before choosing another action.
+- POST `/tasks/{id}/run`: provide JSON `{"run_at_unix": <current timestamp>}` to queue an open, future, or archived one-time schedule immediately (202). Use 0 for an open task. For a monitored job, send `{"complete": true}` instead. Keep the original timestamp on retries. A 409 means the occurrence changed or is unavailable. Inspect the saved schedule before choosing another action.
 - DELETE `/tasks/{id}`: cancel a pending task (204). A missing task or a task already
   delivering, delivered, failed, interrupted or cancelled returns 409.
 - GET `/guide`: these instructions.

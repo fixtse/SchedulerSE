@@ -106,18 +106,25 @@ func (s *Server) runAgentSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		RunAt *int64 `json:"run_at_unix"`
+		RunAt    *int64 `json:"run_at_unix"`
+		Complete bool   `json:"complete"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	if dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF || input.RunAt == nil || *input.RunAt < 0 || !agentID.MatchString(r.PathValue("id")) {
-		agentError(w, 400, "Provide a valid schedule ID and its current run_at_unix")
+	if dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF || (input.Complete && input.RunAt != nil) || (!input.Complete && (input.RunAt == nil || *input.RunAt < 0)) || !agentID.MatchString(r.PathValue("id")) {
+		agentError(w, 400, "Provide a valid schedule ID and either its current run_at_unix or complete=true")
 		return
 	}
-	task, err := s.Store.RunAgentSchedule(r.PathValue("id"), *input.RunAt, time.Now())
+	var task domain.AgentTask
+	var err error
+	if input.Complete {
+		task, err = s.Store.CompleteAgentSchedule(r.PathValue("id"), time.Now())
+	} else {
+		task, err = s.Store.RunAgentSchedule(r.PathValue("id"), *input.RunAt, time.Now())
+	}
 	if errors.Is(err, sql.ErrNoRows) {
-		agentError(w, 409, "Schedule changed or is unavailable. Inspect it before retrying. Only open, future, or archived one-time schedules can be queued.")
+		agentError(w, 409, "Schedule changed or is unavailable. Inspect it before retrying. Use complete=true for a monitored schedule or run_at_unix for a one-time run.")
 		return
 	}
 	if err != nil {
@@ -133,15 +140,16 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		ID              string          `json:"id"`
-		Kind            string          `json:"kind"`
-		Title           string          `json:"title"`
-		Message         string          `json:"message"`
-		Context         json.RawMessage `json:"context"`
-		RunAt           string          `json:"run_at"`
-		AfterSeconds    int64           `json:"after_seconds"`
-		OneTime         bool            `json:"one_time"`
-		IntervalSeconds int64           `json:"interval_seconds"`
+		ID                   string          `json:"id"`
+		Kind                 string          `json:"kind"`
+		Title                string          `json:"title"`
+		Message              string          `json:"message"`
+		Context              json.RawMessage `json:"context"`
+		RunAt                string          `json:"run_at"`
+		AfterSeconds         int64           `json:"after_seconds"`
+		CheckIntervalSeconds int64           `json:"check_interval_seconds"`
+		OneTime              bool            `json:"one_time"`
+		IntervalSeconds      int64           `json:"interval_seconds"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
 	dec := json.NewDecoder(r.Body)
@@ -157,6 +165,11 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 	open := input.RunAt == "" && input.AfterSeconds == 0
 	if (input.RunAt != "" && input.AfterSeconds != 0) || input.AfterSeconds < 0 || input.AfterSeconds > 31536000 || input.IntervalSeconds < 0 || (input.IntervalSeconds > 0 && input.IntervalSeconds < 60) || input.IntervalSeconds > 31536000 {
 		agentError(w, 400, "Provide exactly one of run_at or after_seconds (1–31536000); interval_seconds must be 0 or 60–31536000")
+		return
+	}
+	if input.CheckIntervalSeconds != 0 && (input.Kind != "task" || input.IntervalSeconds != 0 ||
+		input.CheckIntervalSeconds < 1 || input.CheckIntervalSeconds > 31536000) {
+		agentError(w, 400, "check_interval_seconds must be 1–31536000 and is only available for one-time agent tasks")
 		return
 	}
 	if open && (input.Kind != "task" || input.IntervalSeconds != 0) {
@@ -208,8 +221,10 @@ func (s *Server) createAgentTask(w http.ResponseWriter, r *http.Request) {
 	var runAt int64
 	if !open {
 		runAt = at.Unix()
+	} else if input.CheckIntervalSeconds > 0 {
+		runAt = now.Unix() + input.CheckIntervalSeconds
 	}
-	task := domain.AgentTask{ID: input.ID, Kind: input.Kind, Title: input.Title, Message: input.Message, Context: input.Context, RunAt: runAt, IntervalSeconds: input.IntervalSeconds, Status: "pending"}
+	task := domain.AgentTask{ID: input.ID, Kind: input.Kind, Title: input.Title, Message: input.Message, Context: input.Context, RunAt: runAt, IntervalSeconds: input.IntervalSeconds, CheckIntervalSeconds: input.CheckIntervalSeconds, Status: "pending"}
 	if err = s.Store.CreateAgentTask(task); err != nil {
 		if errors.Is(err, adapters.ErrCapacity) {
 			agentError(w, 429, err.Error())

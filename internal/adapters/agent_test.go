@@ -279,3 +279,40 @@ func TestAgentArchiveRestoreAndExpiry(t *testing.T) {
 		t.Fatal("expired receipt was not removed", ok, err)
 	}
 }
+
+func TestMonitoredAgentScheduleCompletesAfterChecks(t *testing.T) {
+	store := testStore(t)
+	now := time.Now()
+	task := domain.AgentTask{
+		ID: "monitored-job", Kind: "task", Title: "Build", RunAt: now.Unix() - 1,
+		CheckIntervalSeconds: 60, Context: json.RawMessage(`{"conversation_id":"thread"}`),
+	}
+	if err := store.CreateAgentTask(task); err != nil {
+		t.Fatal(err)
+	}
+	events, err := store.AgentInbox("thread")
+	if err != nil || len(events) != 1 || events[0].Phase != "check" {
+		t.Fatal("missing health check", events, err)
+	}
+	if ok, err := store.PickupAgentTask(task.ID, task.RunAt, "consumer"); err != nil || !ok {
+		t.Fatal("health check pickup failed", ok, err)
+	}
+	saved, err := store.AgentTask(task.ID)
+	if err != nil || saved.Status != "pending" || saved.ArchivedAt != 0 || saved.RunAt <= now.Unix() {
+		t.Fatal("health check failed to rearm", saved, err)
+	}
+	final, err := store.CompleteAgentSchedule(task.ID, now.Add(-3*time.Second))
+	if err != nil || final.Event().Phase != "completion" || final.RunAt == task.RunAt {
+		t.Fatal("could not queue distinct completion", final, err)
+	}
+	if _, err := store.CompleteAgentSchedule(task.ID, now); err == nil {
+		t.Fatal("duplicate completion accepted")
+	}
+	if ok, err := store.PickupAgentTask(task.ID, final.RunAt, "consumer"); err != nil || !ok {
+		t.Fatal("completion pickup failed", ok, err)
+	}
+	saved, err = store.AgentTask(task.ID)
+	if err != nil || saved.Status != "delivered" || saved.ArchivedAt == 0 {
+		t.Fatal("completion failed to archive", saved, err)
+	}
+}

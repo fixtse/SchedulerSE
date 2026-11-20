@@ -14,7 +14,7 @@ import (
 func migrateAgent(db *sql.DB) error {
 	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS agent_settings(id INTEGER PRIMARY KEY CHECK(id=1),token_hash TEXT NOT NULL DEFAULT '',webhook_url TEXT NOT NULL DEFAULT '',webhook_auth TEXT NOT NULL DEFAULT '',delivery_mode TEXT NOT NULL DEFAULT 'poll');
  INSERT OR IGNORE INTO agent_settings(id) VALUES(1);
- CREATE TABLE IF NOT EXISTS agent_tasks(id TEXT PRIMARY KEY,kind TEXT NOT NULL,title TEXT NOT NULL,message TEXT NOT NULL,context TEXT NOT NULL,run_at INTEGER NOT NULL,interval_seconds INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',http_status INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '',archived_at INTEGER NOT NULL DEFAULT 0);
+ CREATE TABLE IF NOT EXISTS agent_tasks(id TEXT PRIMARY KEY,kind TEXT NOT NULL,title TEXT NOT NULL,message TEXT NOT NULL,context TEXT NOT NULL,run_at INTEGER NOT NULL,interval_seconds INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',http_status INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '',archived_at INTEGER NOT NULL DEFAULT 0,check_interval_seconds INTEGER NOT NULL DEFAULT 0,completion_requested INTEGER NOT NULL DEFAULT 0,completion_inflight INTEGER NOT NULL DEFAULT 0);
  CREATE INDEX IF NOT EXISTS agent_due ON agent_tasks(status,run_at);
  CREATE TABLE IF NOT EXISTS agent_pickups(task_id TEXT NOT NULL,run_at INTEGER NOT NULL,consumer_id TEXT NOT NULL,PRIMARY KEY(task_id,run_at));`)
 	if err != nil {
@@ -29,15 +29,20 @@ func migrateAgent(db *sql.DB) error {
 			return err
 		}
 	}
-	var hasArchive int
-	if err = db.QueryRow("SELECT count(*) FROM pragma_table_info('agent_tasks') WHERE name='archived_at'").Scan(&hasArchive); err != nil {
-		return err
+	for _, column := range []string{"archived_at", "check_interval_seconds", "completion_requested", "completion_inflight"} {
+		var exists int
+		if err = db.QueryRow("SELECT count(*) FROM pragma_table_info('agent_tasks') WHERE name=?", column).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			if _, err = db.Exec("ALTER TABLE agent_tasks ADD COLUMN " + column + " INTEGER NOT NULL DEFAULT 0"); err != nil {
+				return err
+			}
+		}
 	}
-	if hasArchive == 0 {
-		_, err = db.Exec("ALTER TABLE agent_tasks ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0")
-	}
-	return err
+	return nil
 }
+
 func (s *Store) AgentSettings() (v domain.AgentSettings, err error) {
 	err = s.DB.QueryRow(`SELECT token_hash,webhook_url,webhook_auth,delivery_mode FROM agent_settings WHERE id=1`).Scan(&v.TokenHash, &v.WebhookURL, &v.WebhookAuth, &v.DeliveryMode)
 	return
@@ -71,11 +76,11 @@ func (s *Store) SetAgentToken(hash string) error {
 	return err
 }
 
-const agentColumns = `id,kind,title,message,context,run_at,interval_seconds,status,http_status,last_error,archived_at`
+const agentColumns = `id,kind,title,message,context,run_at,interval_seconds,status,http_status,last_error,archived_at,check_interval_seconds,completion_requested`
 
 func scanAgent(row interface{ Scan(...any) error }) (v domain.AgentTask, err error) {
 	var raw string
-	err = row.Scan(&v.ID, &v.Kind, &v.Title, &v.Message, &raw, &v.RunAt, &v.IntervalSeconds, &v.Status, &v.HTTPStatus, &v.LastError, &v.ArchivedAt)
+	err = row.Scan(&v.ID, &v.Kind, &v.Title, &v.Message, &raw, &v.RunAt, &v.IntervalSeconds, &v.Status, &v.HTTPStatus, &v.LastError, &v.ArchivedAt, &v.CheckIntervalSeconds, &v.CompletionRequested)
 	v.Context = json.RawMessage(raw)
 	return
 }
@@ -113,7 +118,7 @@ func (s *Store) AgentTask(id string) (domain.AgentTask, error) {
 	return scanAgent(s.DB.QueryRow(`SELECT `+agentColumns+` FROM agent_tasks WHERE id=?`, id))
 }
 func (s *Store) CreateAgentTask(v domain.AgentTask) error {
-	result, err := s.DB.Exec(`INSERT INTO agent_tasks(id,kind,title,message,context,run_at,interval_seconds) SELECT ?,?,?,?,?,?,? WHERE (SELECT count(*) FROM agent_tasks)<1000`, v.ID, v.Kind, v.Title, v.Message, string(v.Context), v.RunAt, v.IntervalSeconds)
+	result, err := s.DB.Exec(`INSERT INTO agent_tasks(id,kind,title,message,context,run_at,interval_seconds,check_interval_seconds) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM agent_tasks)<1000`, v.ID, v.Kind, v.Title, v.Message, string(v.Context), v.RunAt, v.IntervalSeconds, v.CheckIntervalSeconds)
 	if err != nil {
 		return err
 	}
@@ -152,9 +157,19 @@ func (s *Store) RunAgentSchedule(id string, expected int64, now time.Time) (doma
 	return scanAgent(s.DB.QueryRow(`UPDATE agent_tasks
 		SET status='pending',run_at=CASE WHEN archived_at>0 THEN max(?,run_at+1) ELSE ? END,
 			archived_at=0,http_status=0,last_error=''
-		WHERE id=? AND run_at=? AND interval_seconds=0
+		WHERE id=? AND run_at=? AND interval_seconds=0 AND (check_interval_seconds=0 OR archived_at>0)
 			AND ((status='pending' AND (run_at=0 OR run_at>?)) OR archived_at>?)
 		RETURNING `+agentColumns, now.Unix(), now.Unix(), id, expected, now.Unix(), now.Add(-agentArchiveRetention).Unix()))
+}
+
+// CompleteAgentSchedule replaces the next check with a final delivery. If a
+// webhook check is in flight, its settlement queues the final occurrence.
+func (s *Store) CompleteAgentSchedule(id string, now time.Time) (domain.AgentTask, error) {
+	return scanAgent(s.DB.QueryRow(`UPDATE agent_tasks SET completion_requested=1,
+		run_at=CASE WHEN status='delivering' THEN run_at WHEN run_at=? THEN run_at+1 ELSE ? END
+		WHERE id=? AND check_interval_seconds>0 AND completion_requested=0
+			AND status IN ('pending','delivering')
+		RETURNING `+agentColumns, now.Unix()+1, now.Unix()+1, id))
 }
 
 func (s *Store) pruneAgentArchive(now time.Time) error {
@@ -207,7 +222,7 @@ func (s *Store) deliverAgent(ctx context.Context, h *HTTP) {
 	if err != nil {
 		return
 	}
-	result, err := s.DB.Exec(`UPDATE agent_tasks SET status='delivering' WHERE id=? AND status='pending' AND run_at=? AND (SELECT delivery_mode FROM agent_settings WHERE id=1)='webhook'`, v.ID, v.RunAt)
+	result, err := s.DB.Exec(`UPDATE agent_tasks SET status='delivering',completion_inflight=completion_requested WHERE id=? AND status='pending' AND run_at=? AND completion_requested=? AND (SELECT delivery_mode FROM agent_settings WHERE id=1)='webhook'`, v.ID, v.RunAt, v.CompletionRequested)
 	if err != nil {
 		return
 	}
@@ -228,16 +243,23 @@ func (s *Store) deliverAgent(ctx context.Context, h *HTTP) {
 		}
 	}
 	next := v.RunAt
-	if sendErr == nil && v.IntervalSeconds > 0 {
+	check := v.CheckIntervalSeconds > 0 && !v.CompletionRequested
+	interval := v.IntervalSeconds
+	if check {
+		interval = v.CheckIntervalSeconds
+	}
+	if interval > 0 && (check || sendErr == nil) {
 		status = "pending"
-		next = v.RunAt + ((time.Now().Unix()-v.RunAt)/v.IntervalSeconds+1)*v.IntervalSeconds
+		next = v.RunAt + ((time.Now().Unix()-v.RunAt)/interval+1)*interval
 	}
 	var archivedAt int64
 	if status == "delivered" {
 		archivedAt = time.Now().Unix()
 	}
 	// If this write fails, leave the durable claim for startup recovery.
-	_, _ = s.DB.Exec(`UPDATE agent_tasks SET status=?,run_at=?,http_status=?,last_error=?,archived_at=? WHERE id=? AND status='delivering'`, status, next, response.HTTPStatus, code, archivedAt, v.ID)
+	_, _ = s.DB.Exec(`UPDATE agent_tasks SET status=?,run_at=CASE WHEN ? AND completion_requested=1 THEN max(?,run_at+1) ELSE ? END,
+		http_status=?,last_error=?,archived_at=? WHERE id=? AND status='delivering'`,
+		status, check, time.Now().Unix()+1, next, response.HTTPStatus, code, archivedAt, v.ID)
 }
 
 func (s *Store) AgentInbox(conversation string) ([]domain.AgentEvent, error) {
@@ -290,10 +312,14 @@ func (s *Store) PickupAgentTask(id string, at int64, consumer string) (bool, err
 	}
 	status, next := "delivered", task.RunAt
 	archivedAt := time.Now().Unix()
-	if task.IntervalSeconds > 0 {
+	interval := task.IntervalSeconds
+	if task.CheckIntervalSeconds > 0 && !task.CompletionRequested {
+		interval = task.CheckIntervalSeconds
+	}
+	if interval > 0 {
 		archivedAt = 0
 		status = "pending"
-		next = task.RunAt + ((time.Now().Unix()-task.RunAt)/task.IntervalSeconds+1)*task.IntervalSeconds
+		next = task.RunAt + ((time.Now().Unix()-task.RunAt)/interval+1)*interval
 	}
 	var receipts int
 	if err = tx.QueryRow("SELECT count(*) FROM agent_pickups").Scan(&receipts); err != nil {

@@ -121,7 +121,11 @@ func (s *Store) Seed(jobs []domain.Job) error {
 	return tx.Commit()
 }
 func (s *Store) Recover() error {
-	_, err := s.DB.Exec("UPDATE agent_tasks SET status='interrupted',last_error='delivery_unconfirmed' WHERE status='delivering'; UPDATE runs SET status='interrupted',finished=CURRENT_TIMESTAMP WHERE status='running'; UPDATE telegram_tests SET status='interrupted' WHERE status='running'")
+	_, err := s.DB.Exec(`UPDATE agent_tasks SET status='pending',
+		run_at=CASE WHEN completion_requested=1 THEN max(unixepoch(),run_at+1) ELSE unixepoch()+check_interval_seconds END,
+		last_error='delivery_unconfirmed' WHERE status='delivering' AND check_interval_seconds>0
+		AND (completion_requested=0 OR completion_requested=1 AND completion_inflight=0);` +
+		" UPDATE agent_tasks SET status='interrupted',last_error='delivery_unconfirmed' WHERE status='delivering'; UPDATE runs SET status='interrupted',finished=CURRENT_TIMESTAMP WHERE status='running'; UPDATE telegram_tests SET status='interrupted' WHERE status='running'")
 	return err
 }
 func (s *Store) Begin(j domain.Job, slot string) (bool, error) {

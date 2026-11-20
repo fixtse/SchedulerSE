@@ -252,7 +252,7 @@
                     <dt>Scheduled time (UTC)</dt>
                     <dd>{{if .RunAt}}{{.DueUTC}}{{else}}On demand{{end}}</dd>
                     <dt>Repeat</dt>
-                    <dd>{{if .IntervalSeconds}}Every {{.IntervalSeconds}} seconds{{else}}Once{{end}}</dd>
+                    <dd>{{if .CompletionRequested}}Final delivery{{else if .CheckIntervalSeconds}}Health check every {{.CheckIntervalSeconds}} seconds{{else if .IntervalSeconds}}Every {{.IntervalSeconds}} seconds{{else}}Once{{end}}</dd>
                     <dt>Last HTTP status</dt>
                     <dd>{{if .HTTPStatus}}{{.HTTPStatus}}{{else}}None recorded{{end}}</dd>{{if .LastError}}<dt>Delivery
                         error</dt>

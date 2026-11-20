@@ -190,7 +190,13 @@ def dispatch(db, state, config):
             if config.get("codex_session"):
                 command += ["resume", config["codex_session"]]
             command += ["-"]
-            if event["task"]["kind"] == "task":
+            if event.get("phase") == "check":
+                instruction = ("A SchedulerSE job health check is due. Verify the job's recorded status "
+                               "and progress. If it is ongoing, report that and wait for the completion callback. ")
+            elif event.get("phase") == "completion":
+                instruction = ("A SchedulerSE job completion callback arrived. Verify the recorded exit "
+                               "status and resume the requested work within existing authorization. ")
+            elif event["task"]["kind"] == "task":
                 instruction = ("A user-requested SchedulerSE task is due. Use its title and message to "
                                "resume the requested work within the session's existing authorization. ")
             else:
