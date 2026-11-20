@@ -70,8 +70,8 @@ interval, and `run_at` or `after_seconds` to choose the first check. Each
 `phase: "check"` callback asks the agent to inspect progress. The completion
 POST stops future checks and queues a `phase: "completion"` callback. SchedulerSE
 archives the schedule after delivering that callback. If verification finds
-more work, create a new schedule for it. Use `run_agent_schedule` manually only
-when requested. For a regular scheduled task, use `after_seconds` or `run_at`
+more work, create a new schedule for it. For a regular scheduled task, use
+`after_seconds` or `run_at`
 without requesting a completion webhook.
 
 Tool schemas describe their inputs. Successful tools return structured data under
