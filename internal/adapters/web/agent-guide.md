@@ -57,6 +57,12 @@ Omit `interval_seconds` or set it to zero. All single-occurrence schedules move 
 acknowledges pickup. The archive keeps them for five days after delivery. Use
 **Restore schedule** to choose a new delay or **Run now** to queue immediate delivery.
 
+For long-running jobs, create two one-time schedules before launch. Leave the
+completion schedule open and trigger it with `run_agent_schedule` after recording
+the exit status. Give the separate health check a due time based on expected
+runtime plus a margin. If the check fires first, inspect the recorded status and
+progress. Cancel the pending check once job completion has been verified.
+
 Tool schemas describe their inputs. Successful tools return structured data under
 `result`, except cancellation (`status: cancelled`) and `get_guide` / `get_delivery_file` (text).
 Tool validation and business errors set `isError`; inspect the error and saved state
