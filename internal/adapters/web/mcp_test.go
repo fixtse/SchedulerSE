@@ -84,6 +84,14 @@ func TestMCPTransportDiscoveryAndAuthorization(t *testing.T) {
 	names := map[string]bool{}
 	for _, tool := range envelope.Result.Tools {
 		names[tool.Name] = true
+		if tool.Name == "create_agent_schedule" {
+			if _, ok := tool.InputSchema.Properties["run_at"]; !ok {
+				t.Error("agent schedule missing run_at")
+			}
+			if _, ok := tool.InputSchema.Properties["after_seconds"]; ok {
+				t.Error("agent schedule exposes two timing fields")
+			}
+		}
 		if tool.Name == "create_timer" {
 			for _, field := range []string{"id", "title", "context", "after_seconds"} {
 				if _, ok := tool.InputSchema.Properties[field]; !ok {
@@ -150,7 +158,7 @@ func TestMCPSchedulesAndConnection(t *testing.T) {
 	if result = callMCP(t, f, "create_reminder", map[string]any{"id": "report-reminder", "title": "Report", "run_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339), "context": map[string]any{"conversation_id": "conversation-1"}}); result.IsError {
 		t.Fatal(result.Content)
 	}
-	agentSchedule := map[string]any{"id": "report-follow-up", "title": "Follow up on report", "after_seconds": 60, "one_time": true, "context": map[string]any{"conversation_id": "conversation-1"}}
+	agentSchedule := map[string]any{"id": "report-follow-up", "title": "Follow up on report", "run_at": time.Now().Add(time.Minute).UTC().Format(time.RFC3339), "one_time": true, "context": map[string]any{"conversation_id": "conversation-1"}}
 	if result = callMCP(t, f, "create_agent_schedule", agentSchedule); result.IsError {
 		t.Fatal(result.Content)
 	}

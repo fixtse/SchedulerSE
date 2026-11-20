@@ -40,7 +40,7 @@ Available tools:
 
 - `create_timer`: title, stable ID, `after_seconds`, routing `context`, optional recurrence.
 - `create_reminder`: title, stable ID, exactly one of `run_at` or `after_seconds`, routing `context`, optional recurrence.
-- `create_agent_schedule`: queue a specific task, follow-up, or conversation resumption under **Agent schedules**. Omit both timing fields to leave a one-time task open for on-demand delivery. Default to one occurrence and use recurrence when the user asks for repeated agent delivery.
+- `create_agent_schedule`: queue a specific task, follow-up, or conversation resumption under **Agent schedules**. Omit `run_at` to leave a one-time task open for on-demand delivery. Default to one occurrence and use recurrence when the user asks for repeated agent delivery.
 - `list_schedules`, `get_schedule`, `cancel_schedule`: inspect and cancel agent reminders.
 - `run_agent_schedule`: queue an existing open, future, or archived one-time schedule for immediate delivery. Supply its ID and current `run_at_unix` from `get_schedule`, or use `complete: true` for a monitored job.
 - `create_automation`: save a persistent, reusable HTTP POST or Bash job under **Automations**. It remains saved after each run and supports manual execution or cron.
@@ -66,13 +66,13 @@ on retries. A 202 means completion was accepted for delivery. The token is
 returned at creation and is scoped to that schedule.
 
 Checks default to 300 seconds. Set `check_interval_seconds` to override the
-interval, and `run_at` or `after_seconds` to choose the first check. Each
+interval, and `run_at` to choose the first check. Each
 `phase: "check"` callback asks the agent to inspect progress. The completion
 POST stops future checks and queues a `phase: "completion"` callback. SchedulerSE
 archives the schedule after delivering that callback. If verification finds
 more work, create a new schedule for it. For a regular scheduled task, use
-`after_seconds` or `run_at`
-without requesting a completion webhook.
+`run_at` without requesting a completion webhook. Convert relative requests
+to an RFC3339 timestamp.
 
 Tool schemas describe their inputs. Successful tools return structured data under
 `result`, except cancellation (`status: cancelled`) and `get_guide` / `get_delivery_file` (text).
